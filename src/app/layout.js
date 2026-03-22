@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'AguaControl - Gestión de Sodería',
+  title: 'Carapachay - Gestión de Sodería',
   description: 'Sistema de gestión para soderías argentinas',
   manifest: '/manifest.json',
   themeColor: '#0284c7',
