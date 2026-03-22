@@ -1,0 +1,9 @@
+{
+  "name": "AguaControl",
+  "short_name": "AguaControl",
+  "description": "Gestión de sodería",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#0284c7"
+}
