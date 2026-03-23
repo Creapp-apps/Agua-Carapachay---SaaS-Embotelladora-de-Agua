@@ -188,6 +188,22 @@ const AddressInput = ({ value, onChange, onSelect }) => {
               </button>
             );
           })}
+          <button onMouseDown={() => { onSelect({ address: value, lat: null, lng: null, zone: '' }); setSuggestions([]); setFocused(false); }}
+            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition text-xs text-gray-400 flex items-center gap-2">
+            <I d={IC.check} size={13}/>Usar "{value}" tal cual (sin mapa)
+          </button>
+        </div>
+      )}
+      {focused && !loading && suggestions.length === 0 && value.length >= 4 && (
+        <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+          <button onMouseDown={() => { onSelect({ address: value, lat: null, lng: null, zone: '' }); setSuggestions([]); setFocused(false); }}
+            className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center gap-2">
+            <I d={IC.check} size={14} className="text-sky-500 shrink-0"/>
+            <div>
+              <p className="text-sm text-gray-900 dark:text-gray-100">Guardar "{value}" sin mapa</p>
+              <p className="text-xs text-gray-400">No se encontraron resultados — guardá la dirección manualmente</p>
+            </div>
+          </button>
         </div>
       )}
     </div>
@@ -240,10 +256,26 @@ const ClientDetail = ({client,onBack}) => {
   };
   if(showPlan) return (<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>);
   if(showNewOrder) return (<NewOrderForm client={cur} onBack={()=>setShowNewOrder(false)} onSave={createOrder}/>);
+  const printRemito = () => {
+    const pendingOrders = clientOrders.filter(o => o.status === 'pendiente');
+    const ordersToPrint = pendingOrders.length > 0 ? pendingOrders : clientOrders.slice(0, 1);
+    const date = new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+    const cuitFmt = cur.cuit ? cur.cuit.replace(/(\d{2})(\d{8})(\d{1})/,'$1-$2-$3') : '';
+    const rows = ordersToPrint.flatMap(o => o.items.map(it => `<tr><td style="padding:6px 8px;border-bottom:1px solid #e5e7eb">${it.name}</td><td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${it.qty}</td><td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right">$${(it.price*it.qty).toLocaleString('es-AR')}</td></tr>`)).join('');
+    const total = ordersToPrint.reduce((s,o)=>s+o.total,0);
+    const win = window.open('','_blank');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Remito - ${cur.name}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:32px}h1{font-size:24px;font-weight:bold;margin-bottom:4px}.subtitle{font-size:12px;color:#666;margin-bottom:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.label{font-size:11px;color:#666;text-transform:uppercase;margin-bottom:2px}.value{font-size:14px;font-weight:600}table{width:100%;border-collapse:collapse;margin-bottom:16px}thead{background:#f3f4f6}th{padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#666}th:last-child{text-align:right}th:nth-child(2){text-align:center}.total{text-align:right;font-size:16px;font-weight:bold;border-top:2px solid #111;padding-top:8px}.firmas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:60px}.firma-line{border-top:1px solid #aaa;padding-top:8px;font-size:11px;color:#666;text-align:center}@media print{button{display:none}}</style></head><body><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div><h1>REMITO</h1><div class="subtitle">Fecha: ${date}</div></div><div style="text-align:right;font-size:12px;color:#666"><div>Carapachay Sodería</div></div></div><div class="grid"><div><div class="label">Cliente</div><div class="value">${cur.razonSocial||cur.name}</div></div><div><div class="label">CUIT</div><div class="value">${cuitFmt||'-'}</div></div><div><div class="label">Condición IVA</div><div class="value">${cur.condicionIva||'-'}</div></div><div><div class="label">Dirección</div><div class="value">${cur.address||'-'}</div></div></div><table><thead><tr><th>Producto</th><th style="text-align:center">Cantidad</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${rows||'<tr><td colspan="3" style="padding:12px;text-align:center;color:#999">Sin pedidos pendientes</td></tr>'}</tbody></table><div class="total">Total: $${total.toLocaleString('es-AR')}</div><div class="firmas"><div class="firma-line">Firma del cliente</div><div class="firma-line">Firma del repartidor</div></div><script>window.onload=()=>{window.print();}<\/script></body></html>`);
+    win.document.close();
+  };
+
   return(<div className="space-y-4"><BackBtn onClick={onBack}/>
-    <div><div className="flex items-center gap-2 flex-wrap mb-1"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{cur.name}</h2><Badge variant={cur.type==='empresa'?'info':'default'}>{cur.type==='empresa'?'Empresa':'Casa'}</Badge>{cur.zone&&<Badge variant="violet">{cur.zone}</Badge>}</div><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1"><I d={IC.pin} size={14}/>{cur.address}</p></div>
+    <div><div className="flex items-center gap-2 flex-wrap mb-1"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{cur.name}</h2><Badge variant={cur.type==='empresa'?'info':'default'}>{cur.type==='empresa'?'Empresa':'Casa'}</Badge>{cur.zone&&<Badge variant="violet">{cur.zone}</Badge>}</div><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1"><I d={IC.pin} size={14}/>{cur.address}</p>
+    {cur.type==='empresa'&&(cur.cuit||cur.condicionIva)&&<div className="mt-2 p-2.5 bg-sky-50 dark:bg-sky-900/10 rounded-xl border border-sky-200 dark:border-sky-800 space-y-0.5"><p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">CUIT:</span> {cur.cuit?cur.cuit.replace(/(\d{2})(\d{8})(\d{1})/,'$1-$2-$3'):'-'}</p><p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">IVA:</span> {cur.condicionIva||'-'}</p>{cur.razonSocial&&<p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">Razón Social:</span> {cur.razonSocial}</p>}</div>}
+    {cur.notes&&<div className="mt-2 flex items-start gap-1.5 p-2.5 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-800"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p className="text-xs text-amber-700 dark:text-amber-400">{cur.notes}</p></div>}
+    </div>
     {cur.lat&&<RouteMap stops={[{...cur,clientName:cur.name}]} height={180} showRoute={false}/>}
     <div className="flex gap-2"><a href={'tel:'+cur.phone} className="flex-1"><Btn v="secondary" className="w-full"><I d={IC.phone} size={16}/>Llamar</Btn></a><a href={'https://wa.me/549'+cur.phone} target="_blank" rel="noopener" className="flex-1"><Btn v="success" className="w-full">WhatsApp</Btn></a></div>
+    {cur.type==='empresa'&&<Btn v="outline" onClick={printRemito} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir remito</Btn>}
     <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/><Stat label="Sifones" value={cur.containers?.sifones||0}/><Stat label="Bidones" value={cur.containers?.bidones||0}/></div>
     <Btn v="primary" onClick={()=>setShowNewOrder(true)} className="w-full" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn>
 
@@ -377,7 +409,7 @@ const NewOrderForm = ({client,onBack,onSave}) => {
    ============================================================ */
 const NewClientForm = ({onBack}) => {
   const {clients,setClients}=useApp();
-  const [f,sF]=useState({name:'',type:'casa',phone:'',address:'',zone:'',lat:null,lng:null});
+  const [f,sF]=useState({name:'',type:'casa',phone:'',address:'',zone:'',lat:null,lng:null,cuit:'',razonSocial:'',condicionIva:'Responsable Inscripto',notes:''});
   const [zoneAuto,setZoneAuto]=useState(true); // true = auto-detected, false = manual override
 
   const handleAddressSelect = (data) => {
@@ -404,6 +436,19 @@ const NewClientForm = ({onBack}) => {
       <div className="space-y-3">
         <input placeholder="Nombre / Razón Social" value={f.name} onChange={e=>sF({...f,name:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
         <div className="flex gap-2">{['casa','empresa'].map(t=>(<button key={t} onClick={()=>sF({...f,type:t})} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${f.type===t?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{t==='casa'?'Casa':'Empresa'}</button>))}</div>
+        {f.type==='empresa'&&(
+          <div className="space-y-3 p-3 bg-sky-50 dark:bg-sky-900/10 rounded-xl border border-sky-200 dark:border-sky-800">
+            <p className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wide">Datos de facturación</p>
+            <input placeholder="Razón Social" value={f.razonSocial} onChange={e=>sF({...f,razonSocial:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            <input placeholder="CUIT (sin guiones, ej: 20123456789)" value={f.cuit} onChange={e=>sF({...f,cuit:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Condición IVA</label>
+              <select value={f.condicionIva} onChange={e=>sF({...f,condicionIva:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                {['Responsable Inscripto','Monotributo','Exento','Consumidor Final'].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
         <input placeholder="Teléfono" value={f.phone} onChange={e=>sF({...f,phone:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
 
         {/* ADDRESS with autocomplete */}
@@ -444,6 +489,12 @@ const NewClientForm = ({onBack}) => {
 
         {/* Mini map preview */}
         {f.lat && <RouteMap stops={[{lat:f.lat,lng:f.lng,name:f.name||'Nuevo cliente',address:f.address,clientName:f.name||'Nuevo'}]} height={160} showRoute={false}/>}
+
+        {/* Observaciones */}
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Observaciones de entrega <span className="text-gray-400">(opcional)</span></label>
+          <textarea placeholder="Ej: Piso 3, timbre B. Casa de rejas verdes. Dejar con el portero." value={f.notes} onChange={e=>sF({...f,notes:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 resize-none"/>
+        </div>
       </div>
       <Btn v="primary" onClick={save} disabled={!f.name||!f.phone} className="w-full">Guardar cliente</Btn>
     </div>
