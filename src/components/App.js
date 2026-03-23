@@ -317,7 +317,7 @@ const ClientsModule = () => {
 
 const ClientDetail = ({client,onBack}) => {
   const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}=useApp();
-  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);
+  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);const [showDeleteClient,setShowDeleteClient]=useState(false);
   const [expandedOrder,setExpandedOrder]=useState(null);
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const clientPayments = (payments||[]).filter(p=>p.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
@@ -361,6 +361,16 @@ const ClientDetail = ({client,onBack}) => {
     <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/>{containerStock.map(ct=><Stat key={ct.id} label={ct.name} value={cur.containers?.[ct.id]||0}/>)}</div>
     <div className="flex gap-2"><Btn v="primary" onClick={()=>setShowNewOrder(true)} className="flex-1" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn><Btn v="success" onClick={()=>setShowNewPayment(true)} className="flex-1" size="lg"><I d={IC.money} size={20}/>Cobro</Btn></div>
     {containerStock.length>0&&<Btn v="outline" onClick={()=>{setReturnQtys({});setShowReturnContainers(true);}} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Retirar envases</Btn>}
+    <Btn v="danger" onClick={()=>setShowDeleteClient(true)} className="w-full"><I d={IC.x} size={16}/>Eliminar cliente</Btn>
+    <Modal open={showDeleteClient} onClose={()=>setShowDeleteClient(false)} title="Eliminar cliente">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300">¿Seguro que querés eliminar a <b>{cur.name}</b>? Esta acción no se puede deshacer.</p>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setShowDeleteClient(false)} className="flex-1">Cancelar</Btn>
+          <Btn v="danger" onClick={()=>{setClients(prev=>prev.filter(c=>c.id!==client.id));onBack();}} className="flex-1">Eliminar</Btn>
+        </div>
+      </div>
+    </Modal>
     <Modal open={showReturnContainers} onClose={()=>setShowReturnContainers(false)} title="Retirar envases">
       <div className="space-y-4">
         <p className="text-xs text-gray-500">Ingresá cuántos envases te devuelve {cur.name}</p>
