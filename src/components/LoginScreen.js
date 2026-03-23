@@ -9,6 +9,7 @@
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+<<<<<<< HEAD
     const handleLogin = async (e) => {
       e.preventDefault();
       if (!email || !password) return;
@@ -18,6 +19,17 @@
       if (error) setError(error.message);
       setLoading(false);
     };
+=======
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setLoading(true);
+    setError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError(error.message);
+    setLoading(false);
+  };
+>>>>>>> 17da801 (Fix supabase client with fallback values)
 
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-4">
