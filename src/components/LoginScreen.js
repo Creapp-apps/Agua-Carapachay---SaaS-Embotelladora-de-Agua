@@ -12,13 +12,14 @@ export default function LoginScreen() {
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) return;
-    setLoading(true);
-    setError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError('Email o contraseña incorrectos');
-    setLoading(false);
-  };
-
+        setLoading(true);                                                                                                                                                     
+           setError('');                                 
+            const { error } = await supabase.auth.signInWithPassword({ email, password });                                                                                        
+       -    if (error) setError('Email o contraseña incorrectos');                                                                                                         
+       +    if (error) setError(error.message);                                                                                                                                   
+           setLoading(false);                            
+         };
+        
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
