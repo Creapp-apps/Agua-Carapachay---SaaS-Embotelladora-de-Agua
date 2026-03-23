@@ -1161,6 +1161,78 @@ const PastRouteDetail = ({route:r,onBack})=>{
 
   const ausentes=(r.stops||[]).filter(s=>s.ausente&&s.status==='pendiente');
 
+  const printRoute=()=>{
+    const dur=(()=>{if(!r.startedAt||!r.finishedAt)return'—';const[h,m]=r.startedAt.split(':').map(Number);const start=new Date(r.finishedAt);start.setHours(h,m,0,0);const mins=Math.round((r.finishedAt-start.getTime())/60000);return mins>0?`${Math.floor(mins/60)?Math.floor(mins/60)+'h ':''}${mins%60}min`:'—';})();
+    const metodosLabel={efectivo:'Efectivo',transferencia:'Transferencia',mercadopago:'Mercado Pago',fiado:'Fiado'};
+    const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reparto${r.routeNum?' #'+r.routeNum:''} — Carapachay</title><style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;color:#111;padding:32px;max-width:700px;margin:auto;}
+      h1{font-size:22px;font-weight:700;margin-bottom:2px;}
+      h2{font-size:14px;font-weight:700;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.5px;color:#444;border-bottom:1px solid #ddd;padding-bottom:4px;}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #111;}
+      .logo{font-size:20px;font-weight:900;letter-spacing:-0.5px;}
+      .meta{text-align:right;color:#555;font-size:12px;line-height:1.6;}
+      .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;}
+      .box{border:1px solid #ddd;border-radius:8px;padding:10px 14px;text-align:center;}
+      .box .label{font-size:10px;text-transform:uppercase;color:#888;margin-bottom:2px;}
+      .box .val{font-size:18px;font-weight:700;}
+      .box.green .val{color:#16a34a;}
+      table{width:100%;border-collapse:collapse;margin-top:4px;}
+      th{text-align:left;font-size:11px;text-transform:uppercase;color:#666;padding:6px 8px;border-bottom:1px solid #ddd;}
+      td{padding:7px 8px;border-bottom:1px solid #f0f0f0;vertical-align:top;}
+      tr:last-child td{border-bottom:none;}
+      .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;}
+      .badge-green{background:#dcfce7;color:#15803d;}
+      .badge-orange{background:#fff7ed;color:#c2410c;}
+      .badge-gray{background:#f3f4f6;color:#6b7280;}
+      .badge-red{background:#fee2e2;color:#b91c1c;}
+      .total-row{font-weight:700;background:#f9fafb;}
+      .right{text-align:right;}
+      .footer{margin-top:32px;padding-top:12px;border-top:1px solid #ddd;font-size:11px;color:#aaa;text-align:center;}
+      @media print{body{padding:20px;}@page{margin:15mm;}}
+    </style></head><body>
+    <div class="header">
+      <div><div class="logo">Carapachay</div><div style="color:#555;font-size:12px;margin-top:2px;">Sodería</div></div>
+      <div class="meta">
+        <div style="font-size:16px;font-weight:700;">Reparto${r.routeNum?' #'+r.routeNum:''}</div>
+        <div style="text-transform:capitalize;">${r.date||''}</div>
+        ${r.startedAt?`<div>Inicio: ${r.startedAt} · Fin: ${r.finishedAt?new Date(r.finishedAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'—'} · Duración: ${dur}</div>`:''}
+      </div>
+    </div>
+    <div class="summary">
+      <div class="box green"><div class="label">Total cobrado</div><div class="val">${fmt(r.collected)}</div></div>
+      <div class="box"><div class="label">Entregas</div><div class="val">${r.delivered||done.length}/${(r.stops||[]).length}</div></div>
+      <div class="box"><div class="label">Ausentes</div><div class="val">${ausentes.length}</div></div>
+    </div>
+    ${Object.keys(byMethod).length>0?`<h2>Cobros por método</h2><table><thead><tr><th>Método</th><th class="right">Monto</th></tr></thead><tbody>
+      ${Object.entries(byMethod).map(([k,v])=>`<tr><td>${metodosLabel[k]||k}</td><td class="right">${fmt(v)}</td></tr>`).join('')}
+      <tr class="total-row"><td>Total</td><td class="right">${fmt(r.collected)}</td></tr>
+    </tbody></table>`:''}
+    ${truckItems.length>0?`<h2>Carga del camión</h2><table><thead><tr><th>Producto</th><th class="right">Salió</th><th class="right">Entregó</th><th class="right">Volvió</th></tr></thead><tbody>
+      ${truckItems.map(({id,qty,product})=>`<tr><td>${product?.name||'Producto '+id}</td><td class="right">${qty}</td><td class="right">${deliveredByProduct[id]||0}</td><td class="right">${qty-(deliveredByProduct[id]||0)}</td></tr>`).join('')}
+    </tbody></table>`:''}
+    ${Object.keys(containerReturns).filter(k=>containerReturns[k]>0).length>0?`<h2>Envases recibidos</h2><table><thead><tr><th>Tipo</th><th class="right">Cantidad</th></tr></thead><tbody>
+      ${Object.entries(containerReturns).filter(([,q])=>q>0).map(([cid,q])=>{const ct=containerStock.find(x=>x.id===Number(cid));return`<tr><td>${ct?.name||cid}</td><td class="right">${q}</td></tr>`;}).join('')}
+    </tbody></table>`:''}
+    <h2>Detalle de paradas</h2>
+    <table><thead><tr><th>#</th><th>Cliente</th><th>Productos</th><th>Pago</th><th class="right">Monto</th></tr></thead><tbody>
+      ${(r.stops||[]).map((s,i)=>{
+        const statusBadge=s.status==='entregado'?'<span class="badge badge-green">Entregado</span>':s.ausente?'<span class="badge badge-orange">Ausente</span>':'<span class="badge badge-gray">Sin entregar</span>';
+        const itemsStr=s.status==='entregado'?(s.items||[]).map(it=>`${it.qty}x ${it.name}`).join(', '):'—';
+        const pagoStr=s.status==='entregado'?(s.paymentMethod==='fiado'?'<span class="badge badge-red">Fiado</span>':(metodosLabel[s.paymentMethod]||s.paymentMethod)):'—';
+        const montoStr=s.status==='entregado'?fmt(s.payment||s.total):'—';
+        return`<tr><td style="color:#888">${i+1}</td><td><strong>${s.clientName}</strong><br/>${statusBadge}</td><td style="color:#555">${itemsStr}</td><td>${pagoStr}</td><td class="right">${montoStr}</td></tr>`;
+      }).join('')}
+    </tbody></table>
+    ${ausentes.length>0?`<div style="margin-top:16px;padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px;color:#c2410c;"><strong>Ausentes sin entregar:</strong> ${ausentes.map(s=>s.clientName).join(', ')}</div>`:''}
+    <div class="footer">Generado por Carapachay · ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </body></html>`;
+    const w=window.open('','_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(()=>w.print(),400);
+  };
+
   return(<div className="space-y-4">
     <BackBtn onClick={onBack}/>
     <div className="flex items-start justify-between">
@@ -1168,9 +1240,12 @@ const PastRouteDetail = ({route:r,onBack})=>{
         <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto{r.routeNum?` #${r.routeNum}`:''}</h2>
         <p className="text-sm text-gray-500 capitalize">{r.date}</p>
       </div>
-      <div className="text-right">
-        <p className="text-xl font-bold text-emerald-600">{fmt(r.collected)}</p>
-        <p className="text-xs text-gray-400">{r.delivered}/{(r.stops||[]).length} entregas</p>
+      <div className="flex items-center gap-2">
+        <button onClick={printRoute} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-xs font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 transition active:scale-95"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir</button>
+        <div className="text-right">
+          <p className="text-xl font-bold text-emerald-600">{fmt(r.collected)}</p>
+          <p className="text-xs text-gray-400">{r.delivered}/{(r.stops||[]).length} entregas</p>
+        </div>
       </div>
     </div>
 
