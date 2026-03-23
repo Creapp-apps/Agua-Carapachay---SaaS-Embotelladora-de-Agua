@@ -101,7 +101,7 @@ const Qty = ({value,onChange,min=0,max=9999,label})=>{
 const Search = ({value,onChange,placeholder='Buscar...'})=>(<div className="relative"><div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><I d={IC.search} size={18}/></div><input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>);
 const BackBtn = ({onClick,label='Volver'})=>(<button onClick={onClick} className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-2"><I d={IC.back} size={16}/>{label}</button>);
 const StepBar = ({steps,current})=>(<div className="flex items-center gap-1.5 mb-4">{steps.map((s,i)=>(<div key={i} className="flex items-center gap-1.5 flex-1"><div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all ${i<current?'bg-emerald-500 text-white':i===current?'bg-sky-600 text-white ring-4 ring-sky-600/20':'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>{i<current?<I d={IC.check} size={13}/>:i+1}</div><span className={`text-[11px] font-semibold truncate ${i===current?'text-sky-600 dark:text-sky-400':i<current?'text-emerald-600':'text-gray-400'}`}>{s}</span>{i<steps.length-1&&<div className={`flex-1 h-0.5 rounded ${i<current?'bg-emerald-400':'bg-gray-200 dark:bg-gray-700'}`}/>}</div>))}</div>);
-const Modal = ({open,onClose,title,children})=>{if(!open)return null;return(<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}><div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/><div onClick={e=>e.stopPropagation()} className="relative w-full max-w-lg max-h-[90vh] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 shrink-0"><h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"><I d={IC.x} size={20}/></button></div><div className="overflow-y-auto flex-1 p-4">{children}</div></div></div>);};
+const Modal = ({open,onClose,title,children})=>{if(!open)return null;return(<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={e=>{e.stopPropagation();onClose();}} onTouchEnd={e=>e.stopPropagation()}><div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/><div onClick={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} className="relative w-full max-w-lg max-h-[90vh] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 shrink-0"><h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"><I d={IC.x} size={20}/></button></div><div className="overflow-y-auto flex-1 p-4">{children}</div></div></div>);};
 
 // --- Map ---
 const RouteMap = ({stops=[],height=260,showRoute=true})=>{const mapRef=useRef(null);const mapInst=useRef(null);const markers=useRef([]);const poly=useRef(null);const[loaded,setLoaded]=useState(false);
@@ -222,17 +222,102 @@ const EmptyState = ({icon,title,description,action,actionLabel})=>(
    MÓDULO 1: CLIENTES
    ============================================================ */
 const ClientsModule = () => {
-  const {clients,setClients}=useApp();const[search,setSearch]=useState('');const[filter,setFilter]=useState('all');const[selected,setSelected]=useState(null);const[showNew,setShowNew]=useState(false);
+  const {clients,setClients}=useApp();
+  const[search,setSearch]=useState('');const[filter,setFilter]=useState('all');const[selected,setSelected]=useState(null);const[showNew,setShowNew]=useState(false);
+  const[importPreview,setImportPreview]=useState([]);const[importError,setImportError]=useState('');const[showImport,setShowImport]=useState(false);
+
   const filtered=useMemo(()=>{let l=clients;if(filter!=='all')l=l.filter(c=>c.type===filter);if(search)l=l.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||c.address.toLowerCase().includes(search.toLowerCase())||c.zone?.toLowerCase().includes(search.toLowerCase()));return l;},[clients,search,filter]);
-  if(selected)return <ClientDetail client={selected} onBack={()=>setSelected(null)}/>;if(showNew)return <NewClientForm onBack={()=>setShowNew(false)}/>;
-  return(<div className="space-y-4"><div className="flex items-center justify-between"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Clientes</h2><Btn v="primary" size="sm" onClick={()=>setShowNew(true)}><I d={IC.plus} size={16}/>Nuevo</Btn></div><Search value={search} onChange={setSearch} placeholder="Buscar por nombre, dirección o zona..."/><div className="flex gap-2 flex-wrap">{[['all','Todos'],['casa','Casas'],['empresa','Empresas']].map(([k,l])=>(<button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${filter===k?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{l}</button>))}</div>
-    <div className="space-y-2">{filtered.map(c=>(<Card key={c.id} onClick={()=>setSelected(c)} className="!p-3"><div className="flex items-start justify-between"><div className="flex-1 min-w-0"><div className="flex items-center gap-1.5 flex-wrap"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{c.name}</span><Badge variant={c.type==='empresa'?'info':'default'}>{c.type==='empresa'?'Empresa':'Casa'}</Badge>{c.zone&&<Badge variant="violet">{c.zone}</Badge>}</div><p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{c.address}</p></div><div className="text-right ml-3"><span className={`text-sm font-bold ${c.balance<0?'text-red-600 dark:text-red-400':c.balance>0?'text-emerald-600 dark:text-emerald-400':'text-gray-400'}`}>{fmt(c.balance)}</span>{c.balance<0&&<p className="text-[10px] text-red-400">Fiado</p>}</div></div></Card>))}</div>
+
+  const exportCSV=()=>{
+    const headers=['nombre','telefono','direccion','zona','tipo','cuit','razon_social','condicion_iva','notas','saldo'];
+    const rows=clients.map(c=>[c.name||'',c.phone||'',c.address||'',c.zone||'',c.type||'casa',c.cuit||'',c.razonSocial||'',c.condicionIva||'',c.notes||'',c.balance||0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+    const csv=[headers.join(','),...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`clientes_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile=(e)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try{
+        const text=ev.target?.result||'';
+        const lines=text.split(/\r?\n/).filter(l=>l.trim());
+        if(lines.length<2){setImportError('El archivo está vacío o le falta la fila de encabezados');return;}
+        const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
+        const col=(...names)=>{for(const n of names){const i=headers.indexOf(n);if(i!==-1)return i;}return -1;};
+        const iN=col('nombre','name','cliente','razon social');
+        if(iN===-1){setImportError('No se encontró la columna "nombre". Revisá que el CSV tenga encabezados en la primera fila.');return;}
+        const iT=col('telefono','tel','phone','celular');const iD=col('direccion','address','domicilio');
+        const iZ=col('zona','zone');const iTipo=col('tipo','type');const iC=col('cuit','cuit/cuil');
+        const iR=col('razon_social','razonsocial');const iNo=col('notas','notes','observaciones');const iS=col('saldo','balance','deuda');
+        const parseRow=line=>{const vals=[];let cur='',inQ=false;for(const ch of line){if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}else{cur+=ch;}}vals.push(cur.trim());return vals;};
+        const parsed=lines.slice(1).map(line=>{const v=parseRow(line);const name=(v[iN]||'').replace(/^"|"$/g,'');if(!name)return null;return{name,phone:iT>=0?(v[iT]||'').replace(/^"|"$/g,''):'',address:iD>=0?(v[iD]||'').replace(/^"|"$/g,''):'',zone:iZ>=0?(v[iZ]||'').replace(/^"|"$/g,''):'',type:iTipo>=0&&(v[iTipo]||'').toLowerCase().includes('empresa')?'empresa':'casa',cuit:iC>=0?(v[iC]||'').replace(/^"|"$/g,''):'',razonSocial:iR>=0?(v[iR]||'').replace(/^"|"$/g,''):'',notes:iNo>=0?(v[iNo]||'').replace(/^"|"$/g,''):'',balance:iS>=0?Number((v[iS]||'0').replace(/[^0-9.-]/g,''))||0:0};}).filter(Boolean);
+        if(!parsed.length){setImportError('No se encontraron clientes válidos en el archivo.');return;}
+        setImportPreview(parsed);setImportError('');setShowImport(true);
+      }catch{setImportError('Error al procesar el archivo. Asegurate de que sea un CSV válido.');}
+    };
+    reader.readAsText(file,'UTF-8');e.target.value='';
+  };
+
+  const confirmImport=()=>{
+    const now=Date.now();
+    setClients(prev=>[...prev,...importPreview.map((c,i)=>({id:now+i,...c,containers:{},lastOrder:'-'}))]);
+    setShowImport(false);setImportPreview([]);
+  };
+
+  if(selected)return <ClientDetail client={selected} onBack={()=>setSelected(null)}/>;
+  if(showNew)return <NewClientForm onBack={()=>setShowNew(false)}/>;
+  return(<div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Clientes</h2>
+      <div className="flex items-center gap-2">
+        <button onClick={exportCSV} title="Exportar CSV" className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>CSV
+        </button>
+        <label title="Importar CSV" className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition cursor-pointer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>CSV
+          <input type="file" accept=".csv,text/csv" onChange={handleImportFile} className="hidden"/>
+        </label>
+        <Btn v="primary" size="sm" onClick={()=>setShowNew(true)}><I d={IC.plus} size={16}/>Nuevo</Btn>
+      </div>
+    </div>
+
+    {importError&&<div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 flex items-start gap-2"><I d={IC.alert} size={15} className="text-red-500 shrink-0 mt-0.5"/><p className="text-xs text-red-600">{importError}</p></div>}
+
+    <Search value={search} onChange={setSearch} placeholder="Buscar por nombre, dirección o zona..."/>
+    <div className="flex gap-2 flex-wrap">{[['all','Todos'],['casa','Casas'],['empresa','Empresas']].map(([k,l])=>(<button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${filter===k?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{l}</button>))}</div>
+    <div className="space-y-2">{filtered.map(c=>(<Card key={c.id} onClick={()=>setSelected(c)} className="!p-3"><div className="flex items-start justify-between"><div className="flex-1 min-w-0"><div className="flex items-center gap-1.5 flex-wrap"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{c.name}</span><Badge variant={c.type==='empresa'?'info':'default'}>{c.type==='empresa'?'Empresa':'Casa'}</Badge>{c.zone&&<Badge variant="violet">{c.zone}</Badge>}</div><p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{c.address}</p></div><div className="text-right ml-3"><span className={`text-sm font-bold ${c.balance<0?'text-red-600 dark:text-red-400':'text-gray-400'}`}>{fmt(c.balance)}</span>{c.balance<0&&<p className="text-[10px] text-red-400">Fiado</p>}</div></div></Card>))}</div>
+
+    <Modal open={showImport} onClose={()=>setShowImport(false)} title={`Importar ${importPreview.length} clientes`}>
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">Se van a agregar los siguientes clientes a la base existente:</p>
+        <div className="max-h-64 overflow-y-auto space-y-1.5">
+          {importPreview.map((c,i)=>(
+            <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{c.name}</p>
+                <p className="text-[11px] text-gray-400 truncate">{[c.phone,c.address,c.zone].filter(Boolean).join(' · ')}</p>
+              </div>
+              <Badge variant={c.type==='empresa'?'info':'default'}>{c.type==='empresa'?'Empresa':'Casa'}</Badge>
+            </div>
+          ))}
+        </div>
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-400">Los clientes se agregan a los existentes, no los reemplaza.</p>
+        </div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setShowImport(false)} className="flex-1">Cancelar</Btn>
+          <Btn v="primary" onClick={confirmImport} className="flex-1"><I d={IC.check} size={16}/>Importar {importPreview.length}</Btn>
+        </div>
+      </div>
+    </Modal>
   </div>);
 };
 
 const ClientDetail = ({client,onBack}) => {
-  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments}=useApp();
-  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);
+  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}=useApp();
+  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);
   const [expandedOrder,setExpandedOrder]=useState(null);
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const clientPayments = (payments||[]).filter(p=>p.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
@@ -256,7 +341,7 @@ const ClientDetail = ({client,onBack}) => {
   };
   if(showPlan) return (<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>);
   if(showNewOrder) return (<NewOrderForm client={cur} onBack={()=>setShowNewOrder(false)} onSave={createOrder}/>);
-  if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount,concept,method,createdAt:Date.now()},...prev]);setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance+amount}:c));setShowNewPayment(false);}}/>);
+  if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount,concept,method,createdAt:Date.now()},...prev]);setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+amount)}:c));setShowNewPayment(false);}}/>);
   const printRemito = () => {
     const pendingOrders = clientOrders.filter(o => o.status === 'pendiente');
     const ordersToPrint = pendingOrders.length > 0 ? pendingOrders : clientOrders.slice(0, 1);
@@ -277,8 +362,70 @@ const ClientDetail = ({client,onBack}) => {
     {cur.lat&&<RouteMap stops={[{...cur,clientName:cur.name}]} height={180} showRoute={false}/>}
     <div className="flex gap-2"><a href={'tel:'+cur.phone} className="flex-1"><Btn v="secondary" className="w-full"><I d={IC.phone} size={16}/>Llamar</Btn></a><a href={'https://wa.me/549'+cur.phone} target="_blank" rel="noopener" className="flex-1"><Btn v="success" className="w-full">WhatsApp</Btn></a></div>
     {cur.type==='empresa'&&<Btn v="outline" onClick={printRemito} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir remito</Btn>}
-    <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/><Stat label="Sifones" value={cur.containers?.sifones||0}/><Stat label="Bidones" value={cur.containers?.bidones||0}/></div>
+    <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/>{containerStock.map(ct=><Stat key={ct.id} label={ct.name} value={cur.containers?.[ct.id]||0}/>)}</div>
     <div className="flex gap-2"><Btn v="primary" onClick={()=>setShowNewOrder(true)} className="flex-1" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn><Btn v="success" onClick={()=>setShowNewPayment(true)} className="flex-1" size="lg"><I d={IC.money} size={20}/>Cobro</Btn></div>
+    {containerStock.length>0&&<Btn v="outline" onClick={()=>{setReturnQtys({});setShowReturnContainers(true);}} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Retirar envases</Btn>}
+    <Modal open={showReturnContainers} onClose={()=>setShowReturnContainers(false)} title="Retirar envases">
+      <div className="space-y-4">
+        <p className="text-xs text-gray-500">Ingresá cuántos envases te devuelve {cur.name}</p>
+        <div className="space-y-3">{containerStock.map(ct=>(
+          <div key={ct.id} className="flex items-center justify-between gap-3">
+            <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ct.name}</p><p className="text-xs text-gray-400">Tiene: {cur.containers?.[ct.id]||0}</p></div>
+            <Qty value={returnQtys[ct.id]||0} onChange={v=>setReturnQtys(p=>({...p,[ct.id]:v}))} />
+          </div>
+        ))}</div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setShowReturnContainers(false)} className="flex-1">Cancelar</Btn>
+          <Btn v="primary" onClick={()=>{
+            setClients(p=>p.map(c=>{if(c.id!==cur.id)return c;const nc={...(c.containers||{})};Object.entries(returnQtys).forEach(([id,qty])=>{nc[Number(id)]=Math.max(0,(nc[Number(id)]||0)-qty);});return{...c,containers:nc};}));
+            setContainerStock(p=>p.map(ct=>({...ct,stock:ct.stock+(returnQtys[ct.id]||0)})));
+            setShowReturnContainers(false);
+          }} className="flex-1">Confirmar retiro</Btn>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal open={!!showPayFiado} onClose={()=>setShowPayFiado(null)} title={`Cobrar fiado #${showPayFiado?.orderNum}`}>
+      <div className="space-y-4">
+        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center">
+          <p className="text-xs text-gray-400 mb-1">Total a cobrar</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(showPayFiado?.total||0)}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Método de pago</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[['efectivo','Efectivo'],['transferencia','Transfer.'],['mercadopago','Mercado Pago']].map(([k,l])=>(
+              <button key={k} onClick={()=>setFiadoPayMethod(k)} className={`py-3 rounded-xl text-xs font-semibold border-2 transition active:scale-95 ${fiadoPayMethod===k?'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400':'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Comprobante <span className="font-normal text-gray-400">(opcional)</span></p>
+          {fiadoReceipt?(
+            <div className="relative">
+              <img src={fiadoReceipt} alt="comprobante" className="w-full max-h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700"/>
+              <button onClick={()=>setFiadoReceipt(null)} className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white shadow"><I d={IC.x} size={14}/></button>
+            </div>
+          ):(
+            <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
+              <I d={IC.camera} size={28} className="text-gray-400"/>
+              <span className="text-xs text-gray-400 text-center">Tocá para adjuntar foto o imagen del comprobante</span>
+              <input type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFiadoReceipt(ev.target?.result);r.readAsDataURL(f);}} className="hidden"/>
+            </label>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setShowPayFiado(null)} className="flex-1">Cancelar</Btn>
+          <Btn v="success" disabled={!fiadoPayMethod} onClick={()=>{
+            const o=showPayFiado;
+            setOrders(prev=>prev.map(x=>x.id===o.id?{...x,fiadoPaidMethod:fiadoPayMethod,paidAt:Date.now(),receipt:fiadoReceipt||null}:x));
+            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+o.total)}:c));
+            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:o.total,concept:`Pago fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
+            setShowPayFiado(null);
+          }} className="flex-1"><I d={IC.check} size={16}/>Confirmar pago</Btn>
+        </div>
+      </div>
+    </Modal>
 
     {/* PLAN INFO */}
     {(()=>{
@@ -286,18 +433,21 @@ const ClientDetail = ({client,onBack}) => {
       if(!cp) return showPlan?<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>:<Btn v="outline" onClick={()=>setShowPlan(true)} className="w-full"><I d={IC.file} size={16}/>Asignar plan mensual</Btn>;
       const thisMonth=new Date().toISOString().slice(0,7);
       const delivered=(cp.deliveredMonths||[]);
-      const thisMonthDelivery=delivered.find(d=>d.month===thisMonth);
+      const lastDelivery=delivered.length>0?delivered.reduce((a,b)=>((b.deliveredAt||0)>(a.deliveredAt||0)?b:a)):null;
+      const daysSinceLast=lastDelivery?Math.floor((Date.now()-(lastDelivery.deliveredAt||0))/(1000*60*60*24)):999;
+      const daysUntilNext=Math.max(0,30-daysSinceLast);
+      const canDeliver=daysUntilNext===0;
       const streak=(()=>{let s=0;const now=new Date();for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.toISOString().slice(0,7);if(delivered.find(x=>x.month===k))s++;else break;}return s;})();
       const deliverPlan=()=>{
         setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:[...(x.deliveredMonths||[]),{month:thisMonth,deliveredAt:Date.now()}]}:x));
         setProducts(prev=>prev.map(p=>{const inc=cp.includes?.find(i=>i.productId===p.id);return inc?{...p,stock:Math.max(0,p.stock-inc.qty)}:p;}));
       };
       return(<div className="space-y-2">
-        <Card className={'!p-4 '+(thisMonthDelivery?'!border-emerald-200 dark:!border-emerald-800 !bg-emerald-50/50 dark:!bg-emerald-900/10':'!border-amber-200 dark:!border-amber-800 !bg-amber-50/50 dark:!bg-amber-900/10')}>
+        <Card className={'!p-4 '+(!canDeliver?'!border-emerald-200 dark:!border-emerald-800 !bg-emerald-50/50 dark:!bg-emerald-900/10':'!border-amber-200 dark:!border-amber-800 !bg-amber-50/50 dark:!bg-amber-900/10')}>
           <div className="flex items-start justify-between mb-3">
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <span className={`text-[11px] font-bold uppercase tracking-wide ${thisMonthDelivery?'text-emerald-600':'text-amber-600'}`}>{thisMonthDelivery?'Plan entregado':'Plan pendiente de entrega'}</span>
+                <span className={`text-[11px] font-bold uppercase tracking-wide ${!canDeliver?'text-emerald-600':'text-amber-600'}`}>{!canDeliver?'Plan entregado':'Plan pendiente de entrega'}</span>
                 {streak>1&&<span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-600 px-1.5 py-0.5 rounded-full">🔥 {streak} meses</span>}
               </div>
               <p className="font-bold text-sm text-gray-900 dark:text-gray-100">{cp.planName}</p>
@@ -306,17 +456,21 @@ const ClientDetail = ({client,onBack}) => {
           </div>
           <div className="space-y-2 mb-3">{(cp.includes||[]).map((inc,i)=>(
             <div key={i} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${thisMonthDelivery?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{inc.qty}</div>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${!canDeliver?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{inc.qty}</div>
               <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">{inc.productName}</span>
-              {thisMonthDelivery&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500 shrink-0"><polyline points="20 6 9 17 4 12"/></svg>}
+              {!canDeliver&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500 shrink-0"><polyline points="20 6 9 17 4 12"/></svg>}
             </div>
           ))}</div>
           {cp.includesMachine&&<Badge variant="info" className="mb-3">Maquina incluida</Badge>}
-          {thisMonthDelivery?(
-            <div className="flex items-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl p-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 shrink-0"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <div className="flex-1"><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Entregado este mes</p><p className="text-[10px] text-emerald-600/70">{new Date(thisMonthDelivery.deliveredAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p></div>
-              <button onClick={()=>setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:(x.deliveredMonths||[]).filter(d=>d.month!==thisMonth)}:x))} className="text-[10px] text-gray-400 hover:text-red-400">Deshacer</button>
+          {!canDeliver?(
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl p-3">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 shrink-0"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <div className="flex-1"><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Entregado · próxima en {daysUntilNext} día{daysUntilNext!==1?'s':''}</p><p className="text-[10px] text-emerald-600/70">{lastDelivery&&new Date(lastDelivery.deliveredAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p></div>
+                <button onClick={()=>setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:(x.deliveredMonths||[]).filter(d=>d.deliveredAt!==lastDelivery.deliveredAt)}:x))} className="text-[10px] text-gray-400 hover:text-red-400">Deshacer</button>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5"><div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{width:`${Math.round((daysSinceLast/30)*100)}%`}}/></div>
+              <p className="text-[10px] text-center text-gray-400">{daysSinceLast} de 30 días transcurridos</p>
             </div>
           ):(
             <button onClick={deliverPlan} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm transition active:scale-[0.97] flex items-center justify-center gap-2 shadow-md shadow-amber-500/30">
@@ -342,7 +496,7 @@ const ClientDetail = ({client,onBack}) => {
               <I d={o.status==='entregado'?IC.check:IC.clock} size={18} className={o.status==='entregado'?'text-emerald-600':'text-amber-600'}/>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100">#{o.orderNum}</span><Badge variant={o.status==='entregado'?'success':'warning'}>{o.status==='entregado'?'Entregado':'Pendiente'}</Badge></div>
+              <div className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100">#{o.orderNum}</span><Badge variant={o.status==='entregado'?'success':'warning'}>{o.status==='entregado'?'Entregado':'Pendiente'}</Badge>{o.payment?.method==='fiado'&&!o.paidAt&&<Badge variant="danger">Fiado</Badge>}{o.paidAt&&<Badge variant="success">Pagado</Badge>}</div>
               <p className="text-xs text-gray-400 mt-0.5">{new Date(o.createdAt).toLocaleDateString('es-AR')} - {o.items.length} producto{o.items.length!==1?'s':''}</p>
             </div>
             <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(o.total)}</span>
@@ -351,9 +505,12 @@ const ClientDetail = ({client,onBack}) => {
           {isOpen&&(<div className="border-t border-gray-100 dark:border-gray-800 p-3 bg-gray-50/50 dark:bg-gray-800/30">
             <div className="space-y-1.5 mb-3">{o.items.map((it,idx)=>(<div key={idx} className="flex justify-between text-sm"><span className="text-gray-700 dark:text-gray-300">{it.qty}x {it.name}</span><span className="text-gray-500">{fmt(it.price*it.qty)}</span></div>))}</div>
             <div className="flex justify-between text-sm font-bold border-t border-gray-200 dark:border-gray-700 pt-2"><span>Total</span><span>{fmt(o.total)}</span></div>
-            {o.payment?.method&&<p className="text-xs text-gray-400 mt-1">Cobro: <span className="font-semibold capitalize">{o.payment.method}</span>{o.payment.amount!=null&&o.payment.method!=='fiado'?` — ${fmt(o.payment.amount)}`:''}</p>}
+            {o.payment?.method&&<p className="text-xs text-gray-400 mt-1">Cobro: <span className="font-semibold capitalize">{o.paidAt?o.fiadoPaidMethod||o.payment.method:o.payment.method}</span>{o.payment.amount!=null&&o.payment.method!=='fiado'?` — ${fmt(o.payment.amount)}`:''}</p>}
             {o.note&&<p className="text-xs text-gray-400 mt-1 italic">Nota: {o.note}</p>}
+            {o.paidAt&&<p className="text-xs text-emerald-600 mt-1 font-semibold">Pagado el {new Date(o.paidAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p>}
+            {o.receipt&&<div className="mt-2"><p className="text-[10px] text-gray-400 mb-1">Comprobante</p><img src={o.receipt} className="w-full max-h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer" onClick={e=>{e.stopPropagation();window.open(o.receipt,'_blank');}}/></div>}
             {o.status==='pendiente'&&<button onClick={e=>{e.stopPropagation();markDelivered(o.id);}} className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition flex items-center justify-center gap-1"><I d={IC.check} size={14}/>Marcar como entregado</button>}
+            {o.payment?.method==='fiado'&&!o.paidAt&&<button onClick={e=>{e.stopPropagation();setShowPayFiado(o);setFiadoPayMethod(null);setFiadoReceipt(null);}} className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Ya pagó este fiado</button>}
           </div>)}
         </Card>);
       })}</div>}
@@ -611,12 +768,15 @@ const StockBar = ({stock, minStock}) => {
 };
 
 const StockModule = () => {
-  const {products, setProducts, role} = useApp();
+  const {products, setProducts, role, containerStock, setContainerStock, clients} = useApp();
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState(null);
   const [showHidden, setShowHidden] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [newContainerName, setNewContainerName] = useState('');
+  const [showNewContainer, setShowNewContainer] = useState(false);
+  const [confirmDelContainer, setConfirmDelContainer] = useState(null);
 
   const visible = products.filter(p => showHidden ? p.hidden : !p.hidden);
   const filtered = visible.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
@@ -652,6 +812,59 @@ const StockModule = () => {
         </div>
       )}
 
+      {/* Envases */}
+      <Card className="!p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases</h3>
+          {role==='admin'&&<button onClick={()=>setShowNewContainer(!showNewContainer)} className="flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700"><I d={IC.plus} size={14}/>Nuevo tipo</button>}
+        </div>
+        {showNewContainer&&role==='admin'&&(
+          <div className="flex gap-2 mb-3">
+            <input autoFocus placeholder="Ej: Sifones 1L" value={newContainerName} onChange={e=>setNewContainerName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newContainerName.trim()){setContainerStock(p=>[...p,{id:Date.now(),name:newContainerName.trim(),stock:0}]);setNewContainerName('');setShowNewContainer(false);}}} className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            <Btn v="primary" size="sm" onClick={()=>{if(!newContainerName.trim())return;setContainerStock(p=>[...p,{id:Date.now(),name:newContainerName.trim(),stock:0}]);setNewContainerName('');setShowNewContainer(false);}}>Agregar</Btn>
+          </div>
+        )}
+        {containerStock.length===0?(
+          <p className="text-xs text-gray-400 text-center py-3">{role==='admin'?'Creá tu primer tipo de envase':'Sin envases configurados'}</p>
+        ):(
+          <div className="space-y-3">
+            {containerStock.map(ct=>{
+              const inStreet=clients.reduce((s,c)=>s+(c.containers?.[ct.id]||0),0);
+              const total=ct.stock+inStreet;
+              const pct=total>0?Math.round(ct.stock/total*100):0;
+              return(
+                <div key={ct.id}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{ct.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-amber-600">{inStreet} en calle</span>
+                      <div className="flex items-center gap-1">
+                        {role==='admin'&&<button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:Math.max(0,x.stock-1)}:x))} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-bold text-gray-500 active:scale-90 transition">−</button>}
+                        {role==='admin'?<input type="number" inputMode="numeric" value={ct.stock} onChange={e=>{const v=Math.max(0,parseInt(e.target.value)||0);setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:v}:x));}} onFocus={e=>e.target.select()} className="w-12 h-7 text-center text-base font-bold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:border-sky-500 tabular-nums"/>:<span className="text-base font-bold tabular-nums text-gray-900 dark:text-gray-100 min-w-[2rem] text-center">{ct.stock}</span>}
+                        {role==='admin'&&<button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:x.stock+1}:x))} className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sm font-bold text-sky-600 active:scale-90 transition">+</button>}
+                      </div>
+                      {role==='admin'&&<button onClick={()=>setConfirmDelContainer(ct.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={14}/></button>}
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden flex">
+                    <div className="h-full bg-emerald-400 rounded-l-full transition-all" style={{width:`${pct}%`}}/>
+                    <div className="h-full bg-amber-300 rounded-r-full transition-all" style={{width:`${100-pct}%`}}/>
+                  </div>
+                  <div className="flex justify-between mt-0.5">
+                    <span className="text-[10px] text-emerald-600">Depósito: {ct.stock}</span>
+                    <span className="text-[10px] text-gray-400">Total: {total}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+      <Modal open={!!confirmDelContainer} onClose={()=>setConfirmDelContainer(null)} title="Eliminar tipo de envase">
+        <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">¿Eliminar <b>{containerStock.find(c=>c.id===confirmDelContainer)?.name}</b>? El stock en clientes se perderá.</p>
+        <div className="flex gap-2"><Btn v="secondary" onClick={()=>setConfirmDelContainer(null)} className="flex-1">Cancelar</Btn><Btn v="danger" onClick={()=>{setContainerStock(p=>p.filter(c=>c.id!==confirmDelContainer));setConfirmDelContainer(null);}} className="flex-1">Eliminar</Btn></div>
+      </Modal>
+
       <Search value={search} onChange={setSearch} placeholder="Buscar producto..."/>
 
       <div className="space-y-2">
@@ -661,7 +874,7 @@ const StockModule = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.name}</span>
-                  {p.returnable && <Badge variant="info">Ret.</Badge>}
+                  {p.returnable && <Badge variant="info">{p.containerType==='sifon'?'Sifón':p.containerType==='bidon'?'Bidón':'Ret.'}</Badge>}
                   {p.hidden && <Badge variant="default">Oculto</Badge>}
                   {!p.hidden && p.minStock > 0 && p.stock <= p.minStock * 0.5 && <Badge variant="danger">Crítico</Badge>}
                   {!p.hidden && p.minStock > 0 && p.stock > p.minStock * 0.5 && p.stock <= p.minStock && <Badge variant="warning">Bajo</Badge>}
@@ -728,8 +941,8 @@ const StockMov = ({product, onBack}) => {
 };
 
 const NewProductForm = ({onBack}) => {
-  const {products, setProducts} = useApp();
-  const [f, sF] = useState({name:'', price:'', stock:'', minStock:'', unit:'un', returnable:false});
+  const {products, setProducts, containerStock} = useApp();
+  const [f, sF] = useState({name:'', price:'', stock:'', minStock:'', unit:'un', returnable:false, containerType:null});
   const save = () => {
     if (!f.name) return;
     setProducts([...products, {id: Date.now(), ...f, price: Number(f.price) || 0, stock: Number(f.stock) || 0, minStock: Number(f.minStock) || 0, hidden: false}]);
@@ -751,9 +964,20 @@ const NewProductForm = ({onBack}) => {
           <input placeholder="Ej: 20 — te avisa cuando baje de acá" type="number" value={f.minStock} onChange={e => sF({...f, minStock: e.target.value})} className={inputClass}/>
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-          <input type="checkbox" checked={f.returnable} onChange={e => sF({...f, returnable: e.target.checked})} className="w-4 h-4 rounded"/>
+          <input type="checkbox" checked={f.returnable} onChange={e => sF({...f, returnable: e.target.checked, containerType: e.target.checked ? f.containerType : null})} className="w-4 h-4 rounded"/>
           Envase retornable
         </label>
+        {f.returnable && (
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block font-medium">Tipo de envase</label>
+            {containerStock.length===0?<p className="text-xs text-gray-400 italic">Primero creá tipos de envases en Stock</p>:
+            <div className="flex flex-wrap gap-2">
+              {containerStock.map(ct=>(
+                <button key={ct.id} type="button" onClick={()=>sF({...f,containerType:f.containerType===ct.id?null:ct.id})} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${f.containerType===ct.id?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>{ct.name}</button>
+              ))}
+            </div>}
+          </div>
+        )}
       </div>
       <Btn v="primary" onClick={save} className="w-full">Guardar producto</Btn>
     </div>
@@ -766,26 +990,34 @@ const NewProductForm = ({onBack}) => {
    PLANES / ABONOS MENSUALES
    ============================================================ */
 const PlansModule = () => {
-  const {plans,setPlans}=useApp();
+  const {plans,setPlans,clientPlans}=useApp();
   const [showNew,setShowNew]=useState(false);
   const [editPlan,setEditPlan]=useState(null);
+  const [selectedPlan,setSelectedPlan]=useState(null);
   if(showNew||editPlan) return <NewPlanForm onBack={()=>{setShowNew(false);setEditPlan(null);}} editPlan={editPlan}/>;
+  if(selectedPlan) return <PlanDetail plan={selectedPlan} onBack={()=>setSelectedPlan(null)} onEdit={()=>{setEditPlan(selectedPlan);setSelectedPlan(null);}}/>;
   return(<div className="space-y-4">
     <div className="flex items-center justify-between"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Planes y abonos</h2><Btn v="primary" size="sm" onClick={()=>setShowNew(true)}><I d={IC.plus} size={16}/>Nuevo plan</Btn></div>
     {plans.length===0?<EmptyState icon={IC.file} title="Sin planes" description="Crea planes mensuales: abonos de sifones, alquiler de maquinas, etc." action={()=>setShowNew(true)} actionLabel="Crear plan"/>:
-    <div className="space-y-2">{plans.map(p=>(<Card key={p.id} className="!p-3">
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.name}</span>
-          <p className="text-xs text-gray-500 mt-0.5">{p.includes.map(inc=>inc.qty+'x '+inc.productName).join(' + ')}</p>
-          {p.includesMachine&&<Badge variant="info" className="mt-1">Incluye maquina</Badge>}
+    <div className="space-y-2">{plans.map(p=>{const subCount=clientPlans.filter(cp=>cp.planId===p.id&&cp.active).length;const pendingCount=clientPlans.filter(cp=>{if(!cp.active||cp.planId!==p.id)return false;const dm=cp.deliveredMonths||[];const last=dm.length>0?dm.reduce((a,b)=>((b.deliveredAt||0)>(a.deliveredAt||0)?b:a)):null;const days=last?Math.floor((Date.now()-(last.deliveredAt||0))/(1000*60*60*24)):Math.floor((Date.now()-new Date(cp.startDate||Date.now()).getTime())/(1000*60*60*24));return days>=30;}).length;return(<button key={p.id} onClick={()=>setSelectedPlan(p)} className="w-full text-left active:scale-[0.98] transition-transform">
+      <Card className="!p-3">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.name}</span>
+            <p className="text-xs text-gray-500 mt-0.5">{(p.includes||[]).map(inc=>inc.qty+'x '+inc.productName).join(' + ')}</p>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {subCount>0&&<span className="text-[10px] font-semibold text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">{subCount} suscriptor{subCount!==1?'es':''}</span>}
+              {pendingCount>0&&<span className="text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">{pendingCount} para entregar</span>}
+              {p.includesMachine&&<Badge variant="info">Maquina</Badge>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 ml-3">
+            <div className="text-right mr-1"><span className="text-sm font-bold text-sky-600">{fmt(p.price)}</span><p className="text-[10px] text-gray-400">/mes</p></div>
+            <button onClick={e=>{e.stopPropagation();setPlans(prev=>prev.filter(x=>x.id!==p.id));}} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={15}/></button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 ml-3">
-          <div className="text-right"><span className="text-sm font-bold text-sky-600">{fmt(p.price)}</span><p className="text-[10px] text-gray-400">/mes</p></div>
-          <button onClick={()=>setEditPlan(p)} className="p-2 rounded-lg text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button onClick={()=>setPlans(prev=>prev.filter(x=>x.id!==p.id))} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={15}/></button>
-        </div>
-      </div>
-    </Card>))}</div>}
+      </Card>
+    </button>);})}
+    </div>}
   </div>);
 };
 
@@ -817,6 +1049,34 @@ const NewPlanForm = ({onBack, editPlan=null}) => {
       </div>
     </div>
     <Btn v="primary" onClick={save} disabled={!name||!price} className="w-full">Guardar plan</Btn>
+  </div>);
+};
+
+/* PLAN DETAIL — suscriptores y estado de entrega */
+const PlanDetail = ({plan,onBack,onEdit})=>{
+  const{clientPlans,clients}=useApp();
+  const subs=clientPlans.filter(cp=>cp.planId===plan.id&&cp.active);
+  const getStatus=(cp)=>{
+    const delivered=(cp.deliveredMonths||[]);
+    const last=delivered.length>0?delivered.reduce((a,b)=>((b.deliveredAt||0)>(a.deliveredAt||0)?b:a),delivered[0]):null;
+    const daysSince=last?Math.floor((Date.now()-(last.deliveredAt||0))/(1000*60*60*24)):999;
+    if(!last){const startDays=Math.floor((Date.now()-new Date(cp.startDate||Date.now()).getTime())/(1000*60*60*24));return startDays>=30?{label:'Para entregar',v:'warning',days:null}:{label:'Nuevo',v:'info',days:null};}
+    if(daysSince>=30)return{label:'Para entregar',v:'warning',days:daysSince};
+    return{label:'Al día',v:'success',days:30-daysSince};
+  };
+  const statusColor={success:'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',warning:'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',info:'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'};
+  const pending=subs.filter(cp=>getStatus(cp).v==='warning').length;
+  return(<div className="space-y-4">
+    <BackBtn onClick={onBack}/>
+    <div className="flex items-start justify-between">
+      <div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{plan.name}</h2><p className="text-sm text-sky-600 font-semibold">{fmt(plan.price)}/mes</p></div>
+      <button onClick={onEdit} className="p-2 rounded-lg text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+    </div>
+    {plan.includes?.length>0&&<Card className="!p-3"><p className="text-[10px] font-semibold text-gray-400 uppercase mb-2">Incluye por mes</p><div className="flex flex-wrap gap-2">{plan.includes.map(inc=>(<span key={inc.productId} className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-lg">{inc.qty}x {inc.productName}</span>))}{plan.includesMachine&&<span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs font-semibold px-2.5 py-1 rounded-lg">Maquina</span>}</div></Card>}
+    <div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{subs.length} suscriptor{subs.length!==1?'es':''}</p>{pending>0&&<span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-full">{pending} para entregar</span>}</div>
+    {subs.length===0?<Card><p className="text-sm text-gray-400 text-center py-4">Ningún cliente tiene este plan asignado</p></Card>:
+    <div className="space-y-2">{subs.map(cp=>{const cli=clients.find(c=>c.id===cp.clientId);const st=getStatus(cp);return(<Card key={cp.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{cli?.name||cp.clientId}</p><p className="text-xs text-gray-400 truncate">{cli?.address||cli?.zone||''}</p></div><div className="shrink-0 text-right"><span className={`text-[11px] font-bold px-2 py-1 rounded-full ${statusColor[st.v]}`}>{st.label}</span>{st.days!=null&&<p className="text-[10px] text-gray-400 mt-0.5">{st.v==='success'?`${st.days}d para el próximo`:`hace ${st.days}d`}</p>}</div></div></Card>);})}
+    </div>}
   </div>);
 };
 
@@ -877,11 +1137,133 @@ const AssignPlanForm = ({client,onBack}) => {
 };
 
 /* ============================================================
+   DETALLE DE REPARTO ANTERIOR
+   ============================================================ */
+const PastRouteDetail = ({route:r,onBack})=>{
+  const{products,containerStock}=useApp();
+
+  // Carga que salió
+  const truckItems=Object.entries(r.truckStock||{}).filter(([,q])=>q>0).map(([id,q])=>({id:Number(id),qty:q,product:products.find(p=>p.id===Number(id))}));
+
+  // Carga que volvió (no entregada)
+  const deliveredByProduct={};
+  (r.stops||[]).filter(s=>s.status==='entregado').forEach(s=>(s.items||[]).forEach(it=>{deliveredByProduct[it.productId]=(deliveredByProduct[it.productId]||0)+it.qty;}));
+  const returnedToDepot=truckItems.map(({id,qty,product})=>({product,salió:qty,entregó:deliveredByProduct[id]||0,volvió:qty-(deliveredByProduct[id]||0)})).filter(x=>x.volvió>0);
+
+  // Envases recibidos
+  const containerReturns={};
+  (r.stops||[]).filter(s=>s.status==='entregado').forEach(s=>{Object.entries(s.returnContainers||{}).forEach(([cid,q])=>{containerReturns[cid]=(containerReturns[cid]||0)+q;});});
+
+  // Cobros por método
+  const byMethod={};
+  const done=(r.stops||[]).filter(s=>s.status==='entregado');
+  done.forEach(s=>{const m=s.paymentMethod||'fiado';byMethod[m]=(byMethod[m]||0)+(s.payment||0);});
+
+  const ausentes=(r.stops||[]).filter(s=>s.ausente&&s.status==='pendiente');
+
+  return(<div className="space-y-4">
+    <BackBtn onClick={onBack}/>
+    <div className="flex items-start justify-between">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto{r.routeNum?` #${r.routeNum}`:''}</h2>
+        <p className="text-sm text-gray-500 capitalize">{r.date}</p>
+      </div>
+      <div className="text-right">
+        <p className="text-xl font-bold text-emerald-600">{fmt(r.collected)}</p>
+        <p className="text-xs text-gray-400">{r.delivered}/{(r.stops||[]).length} entregas</p>
+      </div>
+    </div>
+
+    {/* Horario */}
+    <Card className="!p-3">
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div><p className="text-[10px] text-gray-400 mb-0.5">Inicio</p><p className="text-sm font-bold text-gray-900 dark:text-gray-100">{r.startedAt||'—'}</p></div>
+        <div><p className="text-[10px] text-gray-400 mb-0.5">Fin</p><p className="text-sm font-bold text-gray-900 dark:text-gray-100">{r.finishedAt?new Date(r.finishedAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'—'}</p></div>
+        <div><p className="text-[10px] text-gray-400 mb-0.5">Duración</p><p className="text-sm font-bold text-gray-900 dark:text-gray-100">{r.startedAt&&r.finishedAt?(()=>{const [h,m]=r.startedAt.split(':').map(Number);const start=new Date(r.finishedAt);start.setHours(h,m,0,0);const diff=r.finishedAt-start.getTime();const mins=Math.round(diff/60000);return mins>0?`${Math.floor(mins/60)?Math.floor(mins/60)+'h ':''}${mins%60}min`:'—';})():'—'}</p></div>
+      </div>
+    </Card>
+
+    {/* Cobros por método */}
+    <Card className="!p-4">
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Cobros</h3>
+      <div className="space-y-2">{[['efectivo','Efectivo','text-emerald-600'],['transferencia','Transferencia','text-sky-600'],['mercadopago','Mercado Pago','text-blue-600'],['fiado','Fiado','text-red-500']].map(([k,l,c])=>byMethod[k]?(
+        <div key={k} className="flex justify-between text-sm"><span className="text-gray-500">{l}</span><span className={`font-bold ${c}`}>{fmt(byMethod[k])}</span></div>
+      ):null)}</div>
+      <div className="flex justify-between text-sm font-bold border-t border-gray-100 dark:border-gray-800 mt-2 pt-2"><span>Total cobrado</span><span className="text-emerald-600">{fmt(r.collected)}</span></div>
+    </Card>
+
+    {/* Carga que salió */}
+    {truckItems.length>0&&<Card className="!p-4">
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Carga que salió</h3>
+      <div className="space-y-2">{truckItems.map(({id,qty,product})=>(
+        <div key={id} className="flex justify-between text-sm">
+          <span className="text-gray-700 dark:text-gray-300">{product?.name||`Producto ${id}`}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-400">{qty} unid.</span>
+            <span className="text-[11px] text-emerald-600 font-semibold">↓ {deliveredByProduct[id]||0} entregadas</span>
+          </div>
+        </div>
+      ))}</div>
+    </Card>}
+
+    {/* Carga que volvió */}
+    {returnedToDepot.length>0&&<Card className="!p-4">
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Carga que volvió al depósito</h3>
+      <div className="space-y-2">{returnedToDepot.map(({product,salió,volvió},i)=>(
+        <div key={i} className="flex justify-between text-sm">
+          <span className="text-gray-700 dark:text-gray-300">{product?.name||'Producto'}</span>
+          <span className="font-semibold text-amber-600">{volvió} de {salió}</span>
+        </div>
+      ))}</div>
+    </Card>}
+
+    {/* Envases recibidos */}
+    {Object.keys(containerReturns).length>0&&<Card className="!p-4">
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Envases recibidos</h3>
+      <div className="space-y-2">{Object.entries(containerReturns).filter(([,q])=>q>0).map(([cid,q])=>{const ct=containerStock.find(x=>x.id===Number(cid));return(
+        <div key={cid} className="flex justify-between text-sm"><span className="text-gray-700 dark:text-gray-300">{ct?.name||cid}</span><span className="font-bold text-sky-600">{q} devueltos</span></div>
+      );})}</div>
+    </Card>}
+
+    {/* Paradas */}
+    <div>
+      <p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Paradas ({(r.stops||[]).length})</p>
+      <div className="space-y-2">{(r.stops||[]).map((s,i)=>(
+        <Card key={i} className="!p-3">
+          <div className="flex items-start gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${s.status==='entregado'?'bg-emerald-100 dark:bg-emerald-900/30':s.ausente?'bg-orange-100 dark:bg-orange-900/30':'bg-gray-100 dark:bg-gray-800'}`}>
+              {s.status==='entregado'?<I d={IC.check} size={15} className="text-emerald-600"/>:s.ausente?<I d={IC.alert} size={15} className="text-orange-500"/>:<I d={IC.clock} size={15} className="text-gray-400"/>}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{s.clientName}</p>
+                {s.status==='entregado'&&<Badge variant="success">Entregado</Badge>}
+                {s.ausente&&s.status!=='entregado'&&<Badge variant="warning">Ausente</Badge>}
+                {s.status==='pendiente'&&!s.ausente&&<Badge variant="default">Sin entregar</Badge>}
+              </div>
+              {s.status==='entregado'&&<>
+                <p className="text-xs text-gray-400 mt-0.5">{(s.items||[]).map(it=>`${it.qty}x ${it.name}`).join(', ')}</p>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">{s.paymentMethod==='fiado'?`Fiado — ${fmt(s.total)}`:`${s.paymentMethod} — ${fmt(s.payment||s.total)}`}</p>
+                {Object.entries(s.returnContainers||{}).filter(([,q])=>q>0).map(([cid,q])=>{const ct=containerStock.find(x=>x.id===Number(cid));return<p key={cid} className="text-[11px] text-sky-600">↩ {q} {ct?.name||cid}</p>;})}
+              </>}
+            </div>
+          </div>
+        </Card>
+      ))}</div>
+    </div>
+
+    {ausentes.length>0&&<div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3"><p className="text-xs font-semibold text-orange-700 dark:text-orange-400">Ausentes sin entregar ({ausentes.length}): {ausentes.map(s=>s.clientName).join(', ')}</p></div>}
+  </div>);
+};
+
+/* ============================================================
    MÓDULO 3: REPARTO (full flow - load truck → build route → deliver)
    ============================================================ */
 const DeliveryModule = ()=>{
   const{activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,pastRoutes,role}=useApp();
   const[showInit,setShowInit]=useState(false);
+  const[selPast,setSelPast]=useState(null);
+  if(selPast)return <PastRouteDetail route={selPast} onBack={()=>setSelPast(null)}/>;
 
   const startRoute=(route)=>{
     setActiveRoute({...route,startedAt:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})});
@@ -935,7 +1317,20 @@ const DeliveryModule = ()=>{
     {pastRoutes.length>0&&(
       <div>
         <p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Anteriores</p>
-        <div className="space-y-2">{pastRoutes.map((r,i)=>(<Card key={i} className="!p-3 opacity-70"><div className="flex justify-between"><div><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{r.date}</p><p className="text-xs text-gray-400">{r.stops} paradas — {r.delivered} entregas</p></div><span className="text-sm font-bold text-emerald-600">{fmt(r.collected)}</span></div></Card>))}</div>
+        <div className="space-y-2">{pastRoutes.map((r,i)=>(
+          <Card key={i} onClick={()=>r.stops&&typeof r.stops!=='number'&&setSelPast(r)} className={`!p-3 ${r.stops&&typeof r.stops!=='number'?'cursor-pointer active:scale-[0.98] transition-transform':''}`}>
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{r.routeNum?`#${r.routeNum} · `:''}{r.date}</p>
+                <p className="text-xs text-gray-400">{typeof r.stops==='number'?r.stops:r.stops?.length} paradas · {r.delivered} entregas{r.startedAt?` · ${r.startedAt}`:''}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-emerald-600">{fmt(r.collected)}</span>
+                {r.stops&&typeof r.stops!=='number'&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-400"><path d="M9 18l6-6-6-6"/></svg>}
+              </div>
+            </div>
+          </Card>
+        ))}</div>
       </div>
     )}
   </div>);
@@ -1023,26 +1418,48 @@ const BuildRoute = ({mode,setMode,selZones,setSelZones,rc,setRc,onBack,onNext})=
 
 const ActiveRoute = ()=>{const{activeRoute:ar,setActiveRoute,setPastRoutes,clients,setClients}=useApp();const[sel,setSel]=useState(null);const[showAdd,setShowAdd]=useState(false);const[search,setSearch]=useState('');
   const pend=ar.stops.filter(s=>s.status==='pendiente');const done=ar.stops.filter(s=>s.status==='entregado');const tot=done.reduce((s,x)=>s+(x.payment||0),0);
-  const finish=()=>{setPastRoutes(p=>[{date:new Date().toLocaleDateString('es-AR'),stops:ar.stops.length,delivered:done.length,collected:tot},...p]);setActiveRoute(null);};
+  const finish=()=>{setPastRoutes(p=>[{...ar,finishedAt:Date.now(),date:new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'}),delivered:done.length,collected:tot},...p]);setActiveRoute(null);};
   const avail=clients.filter(c=>!ar.stops.find(s=>s.clientId===c.id));const searched=search?avail.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())):avail;
   const addC=(c)=>{setActiveRoute({...ar,stops:[...ar.stops,{id:ar.stops.length+1,clientId:c.id,clientName:c.name,address:c.address,zone:c.zone,lat:c.lat,lng:c.lng,status:'pendiente',items:[],returnContainers:{sifones:0,bidones:0},payment:null,paymentMethod:null,total:0}]});setShowAdd(false);setSearch('');};
   if(sel)return <StopDetail stop={sel} onBack={()=>setSel(null)}/>;
   return(<div className="space-y-4"><div className="flex justify-between"><div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto en curso</h2><p className="text-xs text-gray-500">{ar.startedAt}</p></div><Badge variant="info">{pend.length} pend.</Badge></div><RouteMap stops={ar.stops} height={220}/><Btn v="outline" size="sm" onClick={()=>openGMaps(pend.length?pend:ar.stops)} className="w-full"><I d={IC.nav} size={16}/>Google Maps</Btn><div className="grid grid-cols-3 gap-3"><Stat label="Pendientes" value={pend.length} variant="warning"/><Stat label="Entregados" value={done.length} variant="success"/><Stat label="Cobrado" value={fmt(tot)} variant="success"/></div><Btn v="outline" onClick={()=>setShowAdd(true)} className="w-full" size="sm"><I d={IC.userPlus} size={16}/>Agregar parada</Btn>
     <Modal open={showAdd} onClose={()=>{setShowAdd(false);setSearch('');}} title="Agregar parada"><div className="space-y-3"><Search value={search} onChange={setSearch}/><div className="space-y-1 max-h-[50vh] overflow-y-auto">{searched.map(c=>(<button key={c.id} onClick={()=>addC(c)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-left"><div className="flex-1 min-w-0"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 block truncate">{c.name}</span><p className="text-xs text-gray-400 truncate">{c.address}</p></div><div className="w-9 h-9 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center"><I d={IC.plus} size={18} className="text-sky-600"/></div></button>))}</div></div></Modal>
-    {pend.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Pendientes</p>{pend.map((s,i)=>(<Card key={s.id} onClick={()=>setSel(s)} className="!p-3 mb-2"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-sm font-bold text-amber-700">{i+1}</div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{s.clientName}</p><p className="text-xs text-gray-400 truncate">{s.address}</p></div><Badge variant="violet">{s.zone}</Badge></div></Card>))}</div>}
+    {pend.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Pendientes</p>{pend.map((s,i)=>(<Card key={s.id} onClick={()=>setSel(s)} className={`!p-3 mb-2 ${s.ausente?'!border-orange-200 dark:!border-orange-800':''}`}><div className="flex items-center gap-3"><div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${s.ausente?'bg-orange-100 dark:bg-orange-900/30 text-orange-600':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{s.ausente?<I d={IC.alert} size={16}/>:i+1}</div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{s.clientName}</p><p className="text-xs text-gray-400 truncate">{s.ausente?`Ausente · ${new Date(s.ausenteAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`:s.address}</p></div><div className="flex items-center gap-1"><Badge variant="violet">{s.zone}</Badge></div></div></Card>))}</div>}
     {done.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Entregados</p>{done.map(s=>(<Card key={s.id} className="!p-3 mb-2 opacity-60"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><I d={IC.check} size={16} className="text-emerald-600"/></div><div className="flex-1"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{s.clientName}</p><p className="text-xs text-gray-400">{s.paymentMethod==='fiado'?'Fiado':`${s.paymentMethod} — ${fmt(s.payment)}`}</p></div></div></Card>))}</div>}
     {!pend.length&&<Btn v="success" onClick={finish} className="w-full" size="lg"><I d={IC.check} size={20}/>Finalizar</Btn>}
     {pend.length>0&&<Btn v="danger" onClick={finish} className="w-full" size="sm">Finalizar anticipado</Btn>}
   </div>);
 };
 
-const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients,setClients,products}=useApp();const[step,setStep]=useState(0);const[items,setItems]=useState(products.filter(p=>p.price>0).map(p=>({...p,qty:0})));const[rS,sRS]=useState(0);const[rB,sRB]=useState(0);const[pm,sPm]=useState(null);const[pa,sPa]=useState('');
+const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients,setClients,products,containerStock,setContainerStock,orders,setOrders,setPayments,orderCounter,setOrderCounter}=useApp();const[step,setStep]=useState(0);const[items,setItems]=useState(products.filter(p=>p.price>0).map(p=>({...p,qty:0})));const[returned,setReturned]=useState({});const[pm,sPm]=useState(null);const[pa,sPa]=useState('');
   const total=items.reduce((s,it)=>s+it.price*it.qty,0);
-  const confirm=()=>{const paid=pm==='fiado'?0:(Number(pa)||total);const rem=total-paid;setActiveRoute(p=>({...p,stops:p.stops.map(s=>s.id===stop.id?{...s,status:'entregado',items:items.filter(it=>it.qty>0).map(it=>({productId:it.id,qty:it.qty,name:it.name})),returnContainers:{sifones:rS,bidones:rB},payment:paid,paymentMethod:pm,total}:s)}));if(rem>0)setClients(p=>p.map(c=>c.id===stop.clientId?{...c,balance:c.balance-rem}:c));setStep(3);};
+  const confirm=()=>{
+    const paid=pm==='fiado'?0:(Number(pa)||total);const rem=total-paid;
+    const deliveredItems=items.filter(it=>it.qty>0);
+    const outByContainer={};
+    deliveredItems.forEach(it=>{const p=products.find(x=>x.id===it.id);if(p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
+    const now=Date.now();
+    const orderNum=String(orderCounter).padStart(4,'0');
+    const newOrder={id:now,orderNum,clientId:stop.clientId,clientName:stop.clientName,items:deliveredItems.map(it=>({productId:it.id,qty:it.qty,name:it.name,price:it.price})),total,payment:{method:pm,amount:paid},status:'entregado',createdAt:now,fromRoute:true};
+    setOrders(prev=>[newOrder,...prev]);
+    setOrderCounter(prev=>prev+1);
+    if(paid>0){setPayments(prev=>[{id:now+1,clientId:stop.clientId,clientName:stop.clientName,amount:paid,concept:`Reparto #${orderNum}`,method:pm,createdAt:now},...prev]);}
+    setActiveRoute(p=>({...p,stops:p.stops.map(s=>s.id===stop.id?{...s,status:'entregado',orderNum,items:deliveredItems.map(it=>({productId:it.id,qty:it.qty,name:it.name})),returnContainers:returned,payment:paid,paymentMethod:pm,total}:s)}));
+    setClients(p=>p.map(c=>{if(c.id!==stop.clientId)return c;const nc={...(c.containers||{})};containerStock.forEach(ct=>{nc[ct.id]=Math.max(0,(nc[ct.id]||0)+(outByContainer[ct.id]||0)-(returned[ct.id]||0));});return{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:rem>0?c.balance-rem:c.balance,containers:nc};}));
+    setContainerStock(prev=>prev.map(ct=>({...ct,stock:Math.max(0,ct.stock-(outByContainer[ct.id]||0)+(returned[ct.id]||0))})));
+    setStep(3);
+  };
   if(step===3)return(<div className="text-center py-10 space-y-4"><div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto"><I d={IC.check} size={32} className="text-emerald-600"/></div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Entrega registrada</h2><Btn v="primary" onClick={onBack} className="w-full">Volver</Btn></div>);
   return(<div className="space-y-4"><BackBtn onClick={onBack}/><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{stop.clientName}</h2><p className="text-sm text-gray-500 flex items-center gap-1"><I d={IC.pin} size={14}/>{stop.address}</p>{stop.lat&&<RouteMap stops={[stop]} height={140} showRoute={false}/>}{stop.lat&&<Btn v="outline" size="sm" onClick={()=>window.open(`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`,'_blank')} className="w-full"><I d={IC.nav} size={16}/>Cómo llegar</Btn>}<div className="flex gap-1">{['Productos','Envases','Cobro'].map((l,i)=>(<div key={i} className={`flex-1 h-1.5 rounded-full ${step>=i?'bg-sky-600':'bg-gray-200 dark:bg-gray-700'}`}/>))}</div>
-    {step===0&&<div className="space-y-3"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">¿Qué dejás?</h3>{items.filter(it=>(ar.truckStock[it.id]||0)>0).map(it=>(<Card key={it.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p><p className="text-xs text-gray-400">{fmt(it.price)} — Camión: {ar.truckStock[it.id]||0}</p></div><Qty value={it.qty} onChange={v=>{setItems(p=>p.map(x=>x.id===it.id?{...x,qty:v}:x));}} max={ar.truckStock[it.id]||0}/></div></Card>))}<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div><Btn v="primary" onClick={()=>setStep(1)} className="w-full">Siguiente: Envases</Btn></div>}
-    {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4"><Qty value={rS} onChange={sRS} label="Sifones"/><Qty value={rB} onChange={sRB} label="Bidones"/></Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(total));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
+    {step===0&&<div className="space-y-3">
+      {stop.ausente&&<div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl px-3 py-2"><I d={IC.alert} size={14} className="text-orange-500 shrink-0"/><p className="text-xs text-orange-600 font-semibold">Ausente en visita anterior</p></div>}
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">¿Qué dejás?</h3>{items.filter(it=>(ar.truckStock[it.id]||0)>0).map(it=>(<Card key={it.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p><p className="text-xs text-gray-400">{fmt(it.price)} — Camión: {ar.truckStock[it.id]||0}</p></div><Qty value={it.qty} onChange={v=>{setItems(p=>p.map(x=>x.id===it.id?{...x,qty:v}:x));}} max={ar.truckStock[it.id]||0}/></div></Card>))}<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div>
+      <Btn v="primary" onClick={()=>setStep(1)} className="w-full">Siguiente: Envases</Btn>
+      <button onClick={()=>{setActiveRoute(p=>({...p,stops:p.stops.map(s=>s.id===stop.id?{...s,ausente:true,ausenteAt:Date.now()}:s)}));onBack();}} className="w-full py-3 rounded-xl border-2 border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 text-sm font-semibold hover:bg-orange-50 dark:hover:bg-orange-900/20 transition active:scale-[0.97] flex items-center justify-center gap-2">
+        <I d={IC.alert} size={16}/>No estaba en el domicilio
+      </button>
+    </div>}
+    {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4">{containerStock.length===0?<p className="text-xs text-gray-400 text-center py-2">Sin tipos de envases configurados</p>:containerStock.map(ct=><Qty key={ct.id} value={returned[ct.id]||0} onChange={v=>setReturned(p=>({...p,[ct.id]:v}))} label={ct.name}/>)}</Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(total));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
     {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(total));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
   </div>);
 };
@@ -1050,43 +1467,46 @@ const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients
 /* ============================================================
    MÓDULO 4: MÉTRICAS
    ============================================================ */
-const MetricsModule = ()=>{const{activeRoute:ar,clients,orders}=useApp();const done=ar?ar.stops.filter(s=>s.status==='entregado'):[];const sales=done.reduce((s,d)=>s+d.total,0);const debt=clients.reduce((s,c)=>s+Math.min(0,c.balance),0);const by=done.reduce((a,d)=>{a[d.paymentMethod]=(a[d.paymentMethod]||0)+(d.payment||0);return a;},{});const debtors=[...clients].filter(c=>c.balance<0).sort((a,b)=>a.balance-b.balance);return(<div className="space-y-4"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Métricas</h2><div className="grid grid-cols-2 gap-3"><Stat label="Ventas hoy" value={fmt(sales)} variant="success"/><Stat label="Entregas" value={done.length}/><Stat label="Fiados" value={fmt(debt)} variant="danger" sub="En la calle"/><Stat label="Clientes" value={clients.length}/></div>
-
-    {/* Orders & Products stats */}
-    {(orders||[]).length>0&&<Card><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Resumen de pedidos</h3>
-      {(()=>{
-        const allOrders=orders||[];
-        const totalOrders=allOrders.length;
-        const pendingOrders=allOrders.filter(o=>o.status==='pendiente').length;
-        const fiadoOrders=allOrders.filter(o=>o.payment?.method==='fiado');
-        const totalFiado=fiadoOrders.reduce((s,o)=>s+o.total,0);
-        const productTotals={};
-        allOrders.forEach(o=>(o.items||[]).forEach(it=>{
-          if(!productTotals[it.name])productTotals[it.name]={qty:0,total:0,fiado:0};
-          productTotals[it.name].qty+=it.qty;
-          productTotals[it.name].total+=it.qty*it.price;
-          if(o.payment?.method==='fiado')productTotals[it.name].fiado+=it.qty;
-        }));
-        return(<div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-2.5 text-center"><p className="text-[10px] text-gray-400">Pedidos</p><p className="text-lg font-bold text-gray-900 dark:text-gray-100">{totalOrders}</p></div>
-            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2.5 text-center"><p className="text-[10px] text-amber-600">Pendientes</p><p className="text-lg font-bold text-amber-600">{pendingOrders}</p></div>
-            <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-center"><p className="text-[10px] text-red-500">Fiados</p><p className="text-lg font-bold text-red-600">{fmt(totalFiado)}</p></div>
-          </div>
-          <div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Productos vendidos</p>
-            <div className="space-y-1.5">{Object.entries(productTotals).sort((a,b)=>b[1].qty-a[1].qty).map(([name,data])=>(
-              <div key={name} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                <div><p className="text-sm text-gray-900 dark:text-gray-100">{name}</p>
-                  {data.fiado>0&&<p className="text-[10px] text-red-500">{data.fiado} fiados</p>}
-                </div>
-                <div className="text-right"><span className="text-sm font-bold text-gray-900 dark:text-gray-100">{data.qty} un.</span><p className="text-[10px] text-gray-400">{fmt(data.total)}</p></div>
-              </div>
-            ))}</div>
-          </div>
-        </div>);
-      })()}
-    </Card>}<Card><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Ingresos por método</h3>{[['efectivo','Efectivo','bg-emerald-500'],['transferencia','Transferencia','bg-sky-500'],['mercadopago','Mercado Pago','bg-blue-500'],['fiado','Fiado','bg-red-400']].map(([k,l,c])=>{const a=by[k]||0;const p=sales>0?Math.round(a/sales*100):0;return(<div key={k} className="mb-2"><div className="flex justify-between text-xs mb-1"><span className="text-gray-500">{l}</span><span className="font-semibold text-gray-900 dark:text-gray-100">{fmt(a)}</span></div><div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"><div className={`h-full ${c} rounded-full`} style={{width:`${p}%`}}/></div></div>);})}</Card>{debtors.length>0&&<Card><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Mayores deudores</h3>{debtors.slice(0,5).map(c=>(<div key={c.id} className="flex justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0"><div><p className="text-sm text-gray-900 dark:text-gray-100">{c.name}</p><p className="text-xs text-gray-400">{c.zone}</p></div><span className="text-sm font-bold text-red-600">{fmt(c.balance)}</span></div>))}</Card>}</div>);};
-
+const MetricsModule=()=>{
+  const{clients,orders,payments}=useApp();
+  const[period,setPeriod]=useState('hoy');
+  const[showDebtors,setShowDebtors]=useState(false);
+  const[fromDate,setFromDate]=useState('');
+  const[toDate,setToDate]=useState('');
+  const now=Date.now();
+  const getRange=()=>{
+    const d=new Date();
+    if(period==='hoy'){const s=new Date(d);s.setHours(0,0,0,0);return[s.getTime(),now];}
+    if(period==='semana'){const s=new Date(d);s.setDate(d.getDate()-6);s.setHours(0,0,0,0);return[s.getTime(),now];}
+    if(period==='mes'){const s=new Date(d);s.setDate(d.getDate()-29);s.setHours(0,0,0,0);return[s.getTime(),now];}
+    if(period==='custom'&&fromDate&&toDate){return[new Date(fromDate+'T00:00:00').getTime(),new Date(toDate+'T23:59:59').getTime()];}
+    return[0,now];
+  };
+  const[from,to]=getRange();
+  const filtOrders=(orders||[]).filter(o=>o.createdAt>=from&&o.createdAt<=to);
+  const filtPayments=(payments||[]).filter(p=>(p.createdAt||p.date||0)>=from&&(p.createdAt||p.date||0)<=to);
+  const done=filtOrders.filter(o=>o.status==='entregado');
+  const sales=done.reduce((s,o)=>s+o.total,0);
+  const debtors=[...clients].filter(c=>c.balance<0).sort((a,b)=>a.balance-b.balance);
+  const totalDebt=debtors.reduce((s,c)=>s+Math.abs(c.balance),0);
+  const byMethod=filtPayments.reduce((a,p)=>{a[p.method]=(a[p.method]||0)+(p.amount||0);return a;},{});
+  const totalCollected=['efectivo','transferencia','mercadopago'].reduce((s,m)=>s+(byMethod[m]||0),0);
+  const fiadoRecuperado=byMethod['fiado']||0;
+  const productTotals={};
+  filtOrders.forEach(o=>(o.items||[]).forEach(it=>{if(!productTotals[it.name])productTotals[it.name]={qty:0,revenue:0};productTotals[it.name].qty+=it.qty;productTotals[it.name].revenue+=it.qty*(it.price||0);}));
+  const topProducts=Object.entries(productTotals).sort((a,b)=>b[1].qty-a[1].qty);
+  const maxQty=topProducts[0]?.[1]?.qty||1;
+  return(<div className="space-y-4">
+    <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Métricas</h2>
+    <div className="flex gap-1.5 flex-wrap">{[['hoy','Hoy'],['semana','Semana'],['mes','Mes'],['todo','Todo'],['custom','Rango']].map(([k,l])=>(<button key={k} onClick={()=>setPeriod(k)} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${period===k?'bg-sky-500 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{l}</button>))}</div>
+    {period==='custom'&&<div className="flex gap-2 items-center"><input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/><span className="text-xs text-gray-400">a</span><input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>}
+    <div className="grid grid-cols-2 gap-3"><Stat label="Ventas" value={fmt(sales)} variant="success"/><Stat label="Entregas" value={done.length}/></div>
+    <div onClick={()=>setShowDebtors(p=>!p)} className="cursor-pointer"><Card className="!bg-red-50 dark:!bg-red-900/15 border border-red-200 dark:border-red-800/50 transition-all"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-red-500 uppercase tracking-wide">Fiado en la calle</p><p className="text-2xl font-bold text-red-600 dark:text-red-400">{fmt(totalDebt)}</p><p className="text-xs text-red-400 mt-0.5">{debtors.length} cliente{debtors.length!==1?'s':''} deben</p></div><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 text-red-400 transition-transform duration-200 ${showDebtors?'rotate-180':''}`}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg></div>{showDebtors&&<div className="mt-4 space-y-2.5 border-t border-red-200 dark:border-red-800/50 pt-3">{debtors.length===0?<p className="text-xs text-red-400 text-center">Sin deudores</p>:debtors.map(c=>{const pct=totalDebt>0?Math.round(Math.abs(c.balance)/totalDebt*100):0;return(<div key={c.id} className="space-y-1"><div className="flex justify-between text-xs"><div><span className="font-semibold text-gray-800 dark:text-gray-200">{c.name}</span>{c.zone&&<span className="text-gray-400 ml-1.5">· {c.zone}</span>}</div><span className="font-bold text-red-600">{fmt(Math.abs(c.balance))}</span></div><div className="h-1.5 bg-red-100 dark:bg-red-900/30 rounded-full overflow-hidden"><div className="h-full bg-red-400 rounded-full" style={{width:`${pct}%`}}/></div></div>);})}</div>}</Card></div>
+    <Card><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Arqueo de caja</h3><div className="space-y-2">{[['efectivo','Efectivo','text-emerald-600'],['transferencia','Transferencia','text-sky-600'],['mercadopago','Mercado Pago','text-blue-600']].map(([k,l,tc])=>{const a=byMethod[k]||0;return(<div key={k} className="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0"><span className="text-sm text-gray-500">{l}</span><span className={`text-sm font-bold ${tc}`}>{fmt(a)}</span></div>);})}<div className="flex justify-between items-center pt-2 mt-1 border-t border-gray-200 dark:border-gray-700"><span className="text-sm font-bold text-gray-700 dark:text-gray-300">Total cobrado</span><span className="text-base font-bold text-gray-900 dark:text-gray-100">{fmt(totalCollected)}</span></div>{fiadoRecuperado>0&&<div className="flex justify-between items-center text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 mt-1"><span>Recupero de fiado</span><span className="font-bold">{fmt(fiadoRecuperado)}</span></div>}</div></Card>
+    {topProducts.length>0&&<Card><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Productos más vendidos</h3><div className="space-y-2.5">{topProducts.map(([name,data])=>(<div key={name} className="space-y-1"><div className="flex justify-between text-xs"><span className="text-gray-700 dark:text-gray-300 font-medium">{name}</span><div className="text-right"><span className="font-bold text-gray-900 dark:text-gray-100">{data.qty} un.</span><span className="text-gray-400 ml-2">{fmt(data.revenue)}</span></div></div><div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-sky-400 rounded-full" style={{width:`${Math.round(data.qty/maxQty*100)}%`}}/></div></div>))}</div></Card>}
+    <p className="text-center text-xs text-gray-400 py-2">{clients.length} clientes registrados</p>
+  </div>);
+};
 /* ============================================================
    HOME
    ============================================================ */
@@ -1102,7 +1522,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function App({userEmail=''}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
 
   // Cargar datos desde Supabase al iniciar
@@ -1118,9 +1538,11 @@ export default function App({userEmail=''}){
         if(data.plans?.length) setPlans(data.plans);
         if(data.client_plans?.length) setClientPlans(data.client_plans);
         if(data.pending_routes?.length) setPendingRoutes(data.pending_routes);
+        if(data.past_routes?.length) setPastRoutes(data.past_routes);
         if(data.order_counter) setOrderCounter(data.order_counter);
         if(data.route_counter) setRouteCounter(data.route_counter);
         if(data.payments?.length) setPayments(data.payments);
+        if(data.container_stock&&Array.isArray(data.container_stock)) setContainerStock(data.container_stock);
       }
       setDbLoaded(true);
     };
@@ -1135,17 +1557,18 @@ export default function App({userEmail=''}){
       if(!user)return;
       await supabase.from('user_data').upsert({
         user_id:user.id,
-        clients,products,orders,plans,payments,
+        clients,products,orders,plans,payments,container_stock:containerStock,
         client_plans:clientPlans,
         pending_routes:pendingRoutes,
+        past_routes:pastRoutes,
         order_counter:orderCounter,
         route_counter:routeCounter,
         updated_at:new Date().toISOString(),
       });
     },1000);
     return()=>clearTimeout(timer);
-  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,orderCounter,routeCounter]);
-  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments]);
+  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock]);
+  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock]);
   const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
     <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><button onClick={()=>setShowRP(!showRP)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'} ▾</button><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div>{showRP&&<div className="max-w-lg mx-auto px-4 pb-2"><div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">{[['admin','Admin'],['repartidor','Repartidor'],['operador','Operador']].map(([r,l])=>(<button key={r} onClick={()=>{setRole(r);setShowRP(false);setView('home');}} className={`flex-1 py-2 rounded-lg text-xs font-semibold transition ${role===r?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500'}`}>{l}</button>))}</div></div>}</header>
