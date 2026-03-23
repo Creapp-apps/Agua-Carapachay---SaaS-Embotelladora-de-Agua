@@ -231,10 +231,11 @@ const ClientsModule = () => {
 };
 
 const ClientDetail = ({client,onBack}) => {
-  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans}=useApp();
+  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments}=useApp();
   const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);
   const [expandedOrder,setExpandedOrder]=useState(null);
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
+  const clientPayments = (payments||[]).filter(p=>p.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const cur = clients.find(c=>c.id===client.id)||client;
   const createOrder = (orderItems,note,payment) => {
     const total=orderItems.reduce((s,it)=>s+it.price*it.qty,0);
@@ -255,7 +256,7 @@ const ClientDetail = ({client,onBack}) => {
   };
   if(showPlan) return (<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>);
   if(showNewOrder) return (<NewOrderForm client={cur} onBack={()=>setShowNewOrder(false)} onSave={createOrder}/>);
-  if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance+amount}:c));setShowNewPayment(false);}}/>);
+  if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount,concept,method,createdAt:Date.now()},...prev]);setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance+amount}:c));setShowNewPayment(false);}}/>);
   const printRemito = () => {
     const pendingOrders = clientOrders.filter(o => o.status === 'pendiente');
     const ordersToPrint = pendingOrders.length > 0 ? pendingOrders : clientOrders.slice(0, 1);
@@ -283,21 +284,54 @@ const ClientDetail = ({client,onBack}) => {
     {(()=>{
       const cp=(clientPlans||[]).find(x=>x.clientId===client.id&&x.active);
       if(!cp) return showPlan?<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>:<Btn v="outline" onClick={()=>setShowPlan(true)} className="w-full"><I d={IC.file} size={16}/>Asignar plan mensual</Btn>;
-      const consumed=cp.consumedThisMonth||{};
-      return(<Card className="!border-sky-200 dark:!border-sky-800 !bg-sky-50/30 dark:!bg-sky-900/10">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-sky-600 uppercase">Plan activo</span><span className="text-sm font-bold text-sky-600">{fmt(cp.price)}/mes</span></div>
-        <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{cp.planName}</p>
-        {cp.includesMachine&&<Badge variant="info" className="mt-1">Maquina incluida</Badge>}
-        <div className="mt-2 space-y-1">{(cp.includes||[]).map((inc,i)=>{
-          const used=consumed[inc.productName]||0;
-          const pct=inc.qty>0?Math.min(100,Math.round(used/inc.qty*100)):0;
-          const over=used>inc.qty;
-          return(<div key={i}><div className="flex justify-between text-xs mb-0.5"><span className="text-gray-600 dark:text-gray-400">{inc.productName}</span><span className={over?'text-red-600 font-semibold':'text-gray-500'}>{used}/{inc.qty}{over?' (+'+String(used-inc.qty)+' excedente)':''}</span></div><div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"><div className={'h-full rounded-full transition-all '+(over?'bg-red-500':(pct>=75?'bg-amber-500':'bg-sky-500'))} style={{width:pct+'%'}}/></div></div>);
-        })}</div>
-        <div className="flex gap-3 mt-2"><p className="text-[10px] text-gray-400">Cobro: {cp.billing==='inicio_mes'?'Inicio de mes':cp.billing==='fin_mes'?'Fin de mes':cp.billing==='repartidor'?'Cuando pasa el repartidor':'Dia '+cp.customDay}</p><p className="text-[10px] text-gray-400">Inicio: {new Date(cp.startDate).toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'numeric'})}</p></div>
-        <button onClick={()=>setShowPlan(true)} className="text-xs text-sky-600 font-semibold mt-1">Cambiar plan</button>
-      </Card>);
+      const thisMonth=new Date().toISOString().slice(0,7);
+      const delivered=(cp.deliveredMonths||[]);
+      const thisMonthDelivery=delivered.find(d=>d.month===thisMonth);
+      const streak=(()=>{let s=0;const now=new Date();for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.toISOString().slice(0,7);if(delivered.find(x=>x.month===k))s++;else break;}return s;})();
+      const deliverPlan=()=>{
+        setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:[...(x.deliveredMonths||[]),{month:thisMonth,deliveredAt:Date.now()}]}:x));
+        setProducts(prev=>prev.map(p=>{const inc=cp.includes?.find(i=>i.productId===p.id);return inc?{...p,stock:Math.max(0,p.stock-inc.qty)}:p;}));
+      };
+      return(<div className="space-y-2">
+        <Card className={'!p-4 '+(thisMonthDelivery?'!border-emerald-200 dark:!border-emerald-800 !bg-emerald-50/50 dark:!bg-emerald-900/10':'!border-amber-200 dark:!border-amber-800 !bg-amber-50/50 dark:!bg-amber-900/10')}>
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={`text-[11px] font-bold uppercase tracking-wide ${thisMonthDelivery?'text-emerald-600':'text-amber-600'}`}>{thisMonthDelivery?'Plan entregado':'Plan pendiente de entrega'}</span>
+                {streak>1&&<span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-600 px-1.5 py-0.5 rounded-full">🔥 {streak} meses</span>}
+              </div>
+              <p className="font-bold text-sm text-gray-900 dark:text-gray-100">{cp.planName}</p>
+            </div>
+            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{fmt(cp.price)}<span className="text-[10px] font-normal text-gray-400">/mes</span></span>
+          </div>
+          <div className="space-y-2 mb-3">{(cp.includes||[]).map((inc,i)=>(
+            <div key={i} className="flex items-center gap-2">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${thisMonthDelivery?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{inc.qty}</div>
+              <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">{inc.productName}</span>
+              {thisMonthDelivery&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500 shrink-0"><polyline points="20 6 9 17 4 12"/></svg>}
+            </div>
+          ))}</div>
+          {cp.includesMachine&&<Badge variant="info" className="mb-3">Maquina incluida</Badge>}
+          {thisMonthDelivery?(
+            <div className="flex items-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl p-3">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 shrink-0"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <div className="flex-1"><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Entregado este mes</p><p className="text-[10px] text-emerald-600/70">{new Date(thisMonthDelivery.deliveredAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p></div>
+              <button onClick={()=>setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:(x.deliveredMonths||[]).filter(d=>d.month!==thisMonth)}:x))} className="text-[10px] text-gray-400 hover:text-red-400">Deshacer</button>
+            </div>
+          ):(
+            <button onClick={deliverPlan} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm transition active:scale-[0.97] flex items-center justify-center gap-2 shadow-md shadow-amber-500/30">
+              <I d={IC.truck} size={18}/>Marcar entrega del mes
+            </button>
+          )}
+          <div className="flex gap-3 mt-2"><p className="text-[10px] text-gray-400">Cobro: {cp.billing==='inicio_mes'?'Inicio de mes':cp.billing==='fin_mes'?'Fin de mes':cp.billing==='repartidor'?'Cuando pasa el repartidor':'Dia '+cp.customDay}</p></div>
+          <button onClick={()=>setShowPlan(true)} className="text-xs text-sky-600 font-semibold mt-1">Cambiar plan</button>
+        </Card>
+        {delivered.length>0&&<div className="flex items-center gap-1.5 px-1">{['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m,i)=>{const year=new Date().getFullYear();const key=`${year}-${String(i+1).padStart(2,'0')}`;const done=delivered.find(d=>d.month===key);const isFuture=new Date(year,i,1)>new Date();return(<div key={i} title={m} className={`flex-1 h-2 rounded-full transition-all ${done?'bg-emerald-400':isFuture?'bg-gray-100 dark:bg-gray-800':'bg-gray-200 dark:bg-gray-700'}`}/>);})}</div>}
+      </div>);
     })()}
+    {clientPayments.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Cobros ({clientPayments.length})</p>
+      <div className="space-y-2">{clientPayments.map(p=>(<Card key={p.id} className="!p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0"><I d={IC.money} size={18} className="text-emerald-600"/></div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.concept}</p><p className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('es-AR')} · <span className="capitalize">{p.method}</span></p></div><span className="text-sm font-bold text-emerald-600">{fmt(p.amount)}</span></div></Card>))}</div>
+    </div>}
     <div><div className="flex items-center justify-between mb-2"><p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{'Pedidos ('+clientOrders.length+')'}</p></div>
       {clientOrders.length===0?<p className="text-sm text-gray-400 text-center py-4">Sin pedidos todavia</p>:
       <div className="space-y-2">{clientOrders.map(o=>{
@@ -734,7 +768,8 @@ const NewProductForm = ({onBack}) => {
 const PlansModule = () => {
   const {plans,setPlans}=useApp();
   const [showNew,setShowNew]=useState(false);
-  if(showNew) return <NewPlanForm onBack={()=>setShowNew(false)}/>;
+  const [editPlan,setEditPlan]=useState(null);
+  if(showNew||editPlan) return <NewPlanForm onBack={()=>{setShowNew(false);setEditPlan(null);}} editPlan={editPlan}/>;
   return(<div className="space-y-4">
     <div className="flex items-center justify-between"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Planes y abonos</h2><Btn v="primary" size="sm" onClick={()=>setShowNew(true)}><I d={IC.plus} size={16}/>Nuevo plan</Btn></div>
     {plans.length===0?<EmptyState icon={IC.file} title="Sin planes" description="Crea planes mensuales: abonos de sifones, alquiler de maquinas, etc." action={()=>setShowNew(true)} actionLabel="Crear plan"/>:
@@ -744,25 +779,35 @@ const PlansModule = () => {
           <p className="text-xs text-gray-500 mt-0.5">{p.includes.map(inc=>inc.qty+'x '+inc.productName).join(' + ')}</p>
           {p.includesMachine&&<Badge variant="info" className="mt-1">Incluye maquina</Badge>}
         </div>
-        <div className="text-right ml-3"><span className="text-sm font-bold text-sky-600">{fmt(p.price)}</span><p className="text-[10px] text-gray-400">/mes</p></div>
+        <div className="flex items-center gap-2 ml-3">
+          <div className="text-right"><span className="text-sm font-bold text-sky-600">{fmt(p.price)}</span><p className="text-[10px] text-gray-400">/mes</p></div>
+          <button onClick={()=>setEditPlan(p)} className="p-2 rounded-lg text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button onClick={()=>setPlans(prev=>prev.filter(x=>x.id!==p.id))} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={15}/></button>
+        </div>
       </div>
     </Card>))}</div>}
   </div>);
 };
 
-const NewPlanForm = ({onBack}) => {
+const NewPlanForm = ({onBack, editPlan=null}) => {
   const {products,plans,setPlans}=useApp();
-  const [name,setName]=useState('');
-  const [price,setPrice]=useState('');
-  const [machine,setMachine]=useState(false);
-  const [includes,setIncludes]=useState(products.filter(p=>p.price>0).map(p=>({productId:p.id,productName:p.name,qty:0})));
+  const allIncludes = products.filter(p=>p.price>0).map(p=>{
+    const existing = editPlan?.includes?.find(i=>i.productId===p.id);
+    return {productId:p.id,productName:p.name,qty:existing?.qty||0};
+  });
+  const [name,setName]=useState(editPlan?.name||'');
+  const [price,setPrice]=useState(editPlan?.price||'');
+  const [machine,setMachine]=useState(editPlan?.includesMachine||false);
+  const [includes,setIncludes]=useState(allIncludes);
   const save=()=>{
     if(!name||!price)return;
-    setPlans([...plans,{id:Date.now(),name,price:Number(price),includesMachine:machine,includes:includes.filter(i=>i.qty>0)}]);
+    const updated={id:editPlan?.id||Date.now(),name,price:Number(price),includesMachine:machine,includes:includes.filter(i=>i.qty>0)};
+    if(editPlan) setPlans(prev=>prev.map(p=>p.id===editPlan.id?updated:p));
+    else setPlans(prev=>[...prev,updated]);
     onBack();
   };
   return(<div className="space-y-4"><BackBtn onClick={onBack}/>
-    <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Nuevo plan</h2>
+    <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{editPlan?'Editar plan':'Nuevo plan'}</h2>
     <div className="space-y-3">
       <input placeholder="Nombre (ej: Abono Hogar, Maquina Frio/Calor)" value={name} onChange={e=>setName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
       <div><label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Precio mensual</label><input placeholder="$0" type="number" inputMode="numeric" value={price} onChange={e=>setPrice(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
@@ -1057,7 +1102,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function App({userEmail=''}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
 
   // Cargar datos desde Supabase al iniciar
@@ -1075,6 +1120,7 @@ export default function App({userEmail=''}){
         if(data.pending_routes?.length) setPendingRoutes(data.pending_routes);
         if(data.order_counter) setOrderCounter(data.order_counter);
         if(data.route_counter) setRouteCounter(data.route_counter);
+        if(data.payments?.length) setPayments(data.payments);
       }
       setDbLoaded(true);
     };
@@ -1089,7 +1135,7 @@ export default function App({userEmail=''}){
       if(!user)return;
       await supabase.from('user_data').upsert({
         user_id:user.id,
-        clients,products,orders,plans,
+        clients,products,orders,plans,payments,
         client_plans:clientPlans,
         pending_routes:pendingRoutes,
         order_counter:orderCounter,
@@ -1098,8 +1144,8 @@ export default function App({userEmail=''}){
       });
     },1000);
     return()=>clearTimeout(timer);
-  },[dbLoaded,clients,products,orders,plans,clientPlans,pendingRoutes,orderCounter,routeCounter]);
-  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans]);
+  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,orderCounter,routeCounter]);
+  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments]);
   const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
     <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><button onClick={()=>setShowRP(!showRP)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'} ▾</button><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div>{showRP&&<div className="max-w-lg mx-auto px-4 pb-2"><div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">{[['admin','Admin'],['repartidor','Repartidor'],['operador','Operador']].map(([r,l])=>(<button key={r} onClick={()=>{setRole(r);setShowRP(false);setView('home');}} className={`flex-1 py-2 rounded-lg text-xs font-semibold transition ${role===r?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500'}`}>{l}</button>))}</div></div>}</header>
