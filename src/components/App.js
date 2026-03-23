@@ -55,7 +55,6 @@ async function geocodeAddress(address) {
 
 /* ============================================================ */
 
-const ZONES = Object.keys(ZONE_BARRIOS);
 const ZONE_COLORS = { Centro:'sky', Palermo:'violet', 'San Telmo':'amber', Belgrano:'emerald', Caballito:'rose', 'Villa Crespo':'orange', Recoleta:'indigo' };
 const zoneColor = (z) => ZONE_COLORS[z] || 'gray';
 
@@ -233,7 +232,7 @@ const ClientsModule = () => {
 
 const ClientDetail = ({client,onBack}) => {
   const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans}=useApp();
-  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);
+  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);
   const [expandedOrder,setExpandedOrder]=useState(null);
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const cur = clients.find(c=>c.id===client.id)||client;
@@ -256,6 +255,7 @@ const ClientDetail = ({client,onBack}) => {
   };
   if(showPlan) return (<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>);
   if(showNewOrder) return (<NewOrderForm client={cur} onBack={()=>setShowNewOrder(false)} onSave={createOrder}/>);
+  if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance+amount}:c));setShowNewPayment(false);}}/>);
   const printRemito = () => {
     const pendingOrders = clientOrders.filter(o => o.status === 'pendiente');
     const ordersToPrint = pendingOrders.length > 0 ? pendingOrders : clientOrders.slice(0, 1);
@@ -277,7 +277,7 @@ const ClientDetail = ({client,onBack}) => {
     <div className="flex gap-2"><a href={'tel:'+cur.phone} className="flex-1"><Btn v="secondary" className="w-full"><I d={IC.phone} size={16}/>Llamar</Btn></a><a href={'https://wa.me/549'+cur.phone} target="_blank" rel="noopener" className="flex-1"><Btn v="success" className="w-full">WhatsApp</Btn></a></div>
     {cur.type==='empresa'&&<Btn v="outline" onClick={printRemito} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir remito</Btn>}
     <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/><Stat label="Sifones" value={cur.containers?.sifones||0}/><Stat label="Bidones" value={cur.containers?.bidones||0}/></div>
-    <Btn v="primary" onClick={()=>setShowNewOrder(true)} className="w-full" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn>
+    <div className="flex gap-2"><Btn v="primary" onClick={()=>setShowNewOrder(true)} className="flex-1" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn><Btn v="success" onClick={()=>setShowNewPayment(true)} className="flex-1" size="lg"><I d={IC.money} size={20}/>Cobro</Btn></div>
 
     {/* PLAN INFO */}
     {(()=>{
@@ -405,6 +405,55 @@ const NewOrderForm = ({client,onBack,onSave}) => {
 };
 
 /* ============================================================
+   NEW PAYMENT FORM
+   ============================================================ */
+const NewPaymentForm = ({client, onBack, onSave}) => {
+  const [amount, setAmount] = useState('');
+  const [concept, setConcept] = useState('Plan mensual');
+  const [method, setMethod] = useState(null);
+
+  const handleConfirm = () => {
+    const n = Number(amount);
+    if (!n || !method) return;
+    onSave(n, concept, method);
+  };
+
+  return (
+    <div className="space-y-4">
+      <BackBtn onClick={onBack}/>
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><I d={IC.money} size={22} className="text-emerald-600"/></div>
+        <div><h3 className="font-bold text-gray-900 dark:text-gray-100">Registrar cobro</h3><p className="text-xs text-gray-500">{client.name}</p></div>
+      </div>
+
+      {client.balance < 0 && (
+        <div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3">
+          <p className="text-xs text-red-600 dark:text-red-400 font-semibold">Deuda actual: {fmt(client.balance)}</p>
+        </div>
+      )}
+
+      <div>
+        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Concepto</label>
+        <input value={concept} onChange={e=>setConcept(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Monto cobrado</label>
+        <input type="number" inputMode="numeric" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="$0" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['otro','Otro']].map(([k,l])=>(
+          <button key={k} onClick={()=>setMethod(k)} className={`py-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${method===k?'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400':'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>{l}</button>
+        ))}
+      </div>
+
+      <Btn v="success" onClick={handleConfirm} disabled={!amount||!method} className="w-full" size="lg"><I d={IC.check} size={18}/>Confirmar cobro</Btn>
+    </div>
+  );
+};
+
+/* ============================================================
    NEW CLIENT FORM with ADDRESS AUTOCOMPLETE + AUTO-ZONE
    ============================================================ */
 const NewClientForm = ({onBack}) => {
@@ -478,11 +527,16 @@ const NewClientForm = ({onBack}) => {
               </button>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {ZONES.map(z=>(
-                <button key={z} onClick={()=>{sF({...f,zone:z});setZoneAuto(false);}}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 hover:text-violet-700 dark:hover:text-violet-400 transition">{z}</button>
-              ))}
+            <div className="space-y-2">
+              {[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].map(z=>(
+                    <button key={z} onClick={()=>{sF({...f,zone:z});setZoneAuto(false);}}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 hover:text-violet-700 dark:hover:text-violet-400 transition">{z}</button>
+                  ))}
+                </div>
+              )}
+              <input placeholder="O escribí una zona nueva..." onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim()){sF({...f,zone:e.target.value.trim()});setZoneAuto(false);}}} onBlur={e=>{if(e.target.value.trim()){sF({...f,zone:e.target.value.trim()});setZoneAuto(false);}}} className="w-full px-4 py-2.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400" />
             </div>
           )}
         </div>
@@ -911,7 +965,7 @@ const BuildRoute = ({mode,setMode,selZones,setSelZones,rc,setRc,onBack,onNext})=
   const searched=search?avail.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||c.address.toLowerCase().includes(search.toLowerCase())||(c.zone||'').toLowerCase().includes(search.toLowerCase())):avail;
   return(<div className="space-y-4"><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center"><I d={IC.route} size={22} className="text-violet-600"/></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Armar recorrido</h3><p className="text-xs text-gray-500">Por zona, por cliente, o combiná</p></div></div>
     {!mode?(<div className="grid grid-cols-2 gap-3"><Card onClick={()=>setMode('zona')} className="!p-5 text-center"><div className="w-14 h-14 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mx-auto mb-3"><I d={IC.mapPin2} size={26} className="text-violet-600"/></div><p className="font-bold text-sm text-gray-900 dark:text-gray-100">Por zona</p></Card><Card onClick={()=>setMode('cliente')} className="!p-5 text-center"><div className="w-14 h-14 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center mx-auto mb-3"><I d={IC.users} size={26} className="text-sky-600"/></div><p className="font-bold text-sm text-gray-900 dark:text-gray-100">Por cliente</p></Card></div>):(<>
-      <div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Zonas</p><div className="flex flex-wrap gap-2">{ZONES.map(z=>{const s=selZones.includes(z);const cnt=clients.filter(c=>c.zone===z).length;return <button key={z} onClick={()=>toggleZone(z)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border-2 transition-all active:scale-95 ${s?'bg-violet-600 text-white border-violet-600':'bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700'}`}>{s&&<I d={IC.check} size={14}/>}{z} <span className="opacity-60">({cnt})</span></button>;})}</div></div>
+      <div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Zonas</p><div className="flex flex-wrap gap-2">{[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].map(z=>{const s=selZones.includes(z);const cnt=clients.filter(c=>c.zone===z).length;return <button key={z} onClick={()=>toggleZone(z)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border-2 transition-all active:scale-95 ${s?'bg-violet-600 text-white border-violet-600':'bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700'}`}>{s&&<I d={IC.check} size={14}/>}{z} <span className="opacity-60">({cnt})</span></button>;})}</div></div>
       {rc.length>0&&<RouteMap stops={rc.map(c=>({...c,clientName:c.name}))} height={200}/>}
       {rc.length>0&&<div><div className="flex justify-between mb-2"><p className="text-[11px] font-semibold text-gray-500 uppercase">Paradas ({rc.length})</p><button onClick={()=>setShowAdd(true)} className="flex items-center gap-1 text-xs font-semibold text-sky-600"><I d={IC.userPlus} size={14}/>Agregar</button></div><div className="space-y-1.5">{rc.map((c,i)=>(<div key={c.id} className="flex items-center gap-2 bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-800 rounded-xl p-2.5"><div className="flex flex-col gap-0.5"><button onClick={()=>moveC(i,-1)} disabled={!i} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 15l-6-6-6 6"/></svg></button><button onClick={()=>moveC(i,1)} disabled={i===rc.length-1} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg></button></div><div className="w-6 h-6 rounded-full bg-sky-100 dark:bg-sky-800 flex items-center justify-center text-[11px] font-bold text-sky-700 dark:text-sky-400">{i+1}</div><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{c.name}</p><p className="text-xs text-gray-400 truncate">{c.address}</p></div><Badge variant="violet" className="shrink-0">{c.zone}</Badge><button onClick={()=>setRc(p=>p.filter(x=>x.id!==c.id))} className="p-1 text-gray-400 hover:text-red-500"><I d={IC.x} size={16}/></button></div>))}</div></div>}
       {mode==='cliente'&&!rc.length&&<Btn v="outline" onClick={()=>setShowAdd(true)} className="w-full"><I d={IC.userPlus} size={18}/>Agregar clientes</Btn>}
@@ -1004,6 +1058,47 @@ import { supabase } from '@/lib/supabase';
 export default function App({userEmail=''}){
   const[dark,setDark]=useState(false);
   const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);
+  const[dbLoaded,setDbLoaded]=useState(false);
+
+  // Cargar datos desde Supabase al iniciar
+  useEffect(()=>{
+    const load=async()=>{
+      const{data:{user}}=await supabase.auth.getUser();
+      if(!user)return;
+      const{data}=await supabase.from('user_data').select('*').eq('user_id',user.id).single();
+      if(data){
+        if(data.clients?.length) setClients(data.clients);
+        if(data.products?.length) setProducts(data.products);
+        if(data.orders?.length) setOrders(data.orders);
+        if(data.plans?.length) setPlans(data.plans);
+        if(data.client_plans?.length) setClientPlans(data.client_plans);
+        if(data.pending_routes?.length) setPendingRoutes(data.pending_routes);
+        if(data.order_counter) setOrderCounter(data.order_counter);
+        if(data.route_counter) setRouteCounter(data.route_counter);
+      }
+      setDbLoaded(true);
+    };
+    load();
+  },[]);
+
+  // Guardar en Supabase cuando cambia algo (con debounce de 1s)
+  useEffect(()=>{
+    if(!dbLoaded)return;
+    const timer=setTimeout(async()=>{
+      const{data:{user}}=await supabase.auth.getUser();
+      if(!user)return;
+      await supabase.from('user_data').upsert({
+        user_id:user.id,
+        clients,products,orders,plans,
+        client_plans:clientPlans,
+        pending_routes:pendingRoutes,
+        order_counter:orderCounter,
+        route_counter:routeCounter,
+        updated_at:new Date().toISOString(),
+      });
+    },1000);
+    return()=>clearTimeout(timer);
+  },[dbLoaded,clients,products,orders,plans,clientPlans,pendingRoutes,orderCounter,routeCounter]);
   const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans]);
   const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
