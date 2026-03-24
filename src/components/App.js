@@ -317,7 +317,7 @@ const ClientsModule = () => {
 
 const ClientDetail = ({client,onBack}) => {
   const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}=useApp();
-  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);const [showDeleteClient,setShowDeleteClient]=useState(false);
+  const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);const [showDeleteClient,setShowDeleteClient]=useState(false);const [showPartialPayFiado,setShowPartialPayFiado]=useState(null);const [partialPayAmount,setPartialPayAmount]=useState('');const [partialPayMethod,setPartialPayMethod]=useState(null);
   const [expandedOrder,setExpandedOrder]=useState(null);
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const clientPayments = (payments||[]).filter(p=>p.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
@@ -358,6 +358,7 @@ const ClientDetail = ({client,onBack}) => {
     </div>
     {cur.lat&&<RouteMap stops={[{...cur,clientName:cur.name}]} height={180} showRoute={false}/>}
     <div className="flex gap-2"><a href={'tel:'+cur.phone} className="flex-1"><Btn v="secondary" className="w-full"><I d={IC.phone} size={16}/>Llamar</Btn></a><a href={'https://wa.me/549'+cur.phone} target="_blank" rel="noopener" className="flex-1"><Btn v="success" className="w-full">WhatsApp</Btn></a></div>
+    {cur.email&&<a href={'mailto:'+cur.email}><p className="text-sm text-sky-600 dark:text-sky-400 flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{cur.email}</p></a>}
     <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/>{containerStock.map(ct=><Stat key={ct.id} label={ct.name} value={cur.containers?.[ct.id]||0}/>)}</div>
     <div className="flex gap-2"><Btn v="primary" onClick={()=>setShowNewOrder(true)} className="flex-1" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn><Btn v="success" onClick={()=>setShowNewPayment(true)} className="flex-1" size="lg"><I d={IC.money} size={20}/>Cobro</Btn></div>
     {containerStock.length>0&&<Btn v="outline" onClick={()=>{setReturnQtys({});setShowReturnContainers(true);}} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Retirar envases</Btn>}
@@ -394,8 +395,9 @@ const ClientDetail = ({client,onBack}) => {
     <Modal open={!!showPayFiado} onClose={()=>setShowPayFiado(null)} title={`Cobrar fiado #${showPayFiado?.orderNum}`}>
       <div className="space-y-4">
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center">
-          <p className="text-xs text-gray-400 mb-1">Total a cobrar</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(showPayFiado?.total||0)}</p>
+          <p className="text-xs text-gray-400 mb-1">{(showPayFiado?.partialPayments?.length>0)?'Restante a cobrar':'Total a cobrar'}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</p>
+          {(showPayFiado?.partialPayments?.length>0)&&<p className="text-xs text-gray-400 mt-1">Total: {fmt(showPayFiado?.total)} — Ya pagado: {fmt((showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</p>}
         </div>
         <div>
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Método de pago</p>
@@ -424,11 +426,47 @@ const ClientDetail = ({client,onBack}) => {
           <Btn v="secondary" onClick={()=>setShowPayFiado(null)} className="flex-1">Cancelar</Btn>
           <Btn v="success" disabled={!fiadoPayMethod} onClick={()=>{
             const o=showPayFiado;
+            const alreadyPaid=(o.partialPayments||[]).reduce((s,p)=>s+p.amount,0);
+            const remaining=o.total-alreadyPaid;
             setOrders(prev=>prev.map(x=>x.id===o.id?{...x,fiadoPaidMethod:fiadoPayMethod,paidAt:Date.now(),receipt:fiadoReceipt||null}:x));
-            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+o.total)}:c));
-            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:o.total,concept:`Pago fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
+            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+remaining)}:c));
+            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:remaining,concept:`Pago fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
             setShowPayFiado(null);
           }} className="flex-1"><I d={IC.check} size={16}/>Confirmar pago</Btn>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal open={!!showPartialPayFiado} onClose={()=>{setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);}} title={`Pago parcial fiado #${showPartialPayFiado?.orderNum}`}>
+      <div className="space-y-4">
+        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3">
+          <div className="flex justify-between text-xs text-gray-400 mb-1"><span>Total del pedido</span><span>{fmt(showPartialPayFiado?.total||0)}</span></div>
+          {(showPartialPayFiado?.partialPayments?.length>0)&&<div className="flex justify-between text-xs text-gray-400 mb-1"><span>Ya pagado</span><span>{fmt((showPartialPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</span></div>}
+          <div className="flex justify-between text-sm font-bold text-gray-900 dark:text-gray-100 border-t border-gray-200 dark:border-gray-700 pt-2 mt-1"><span>Pendiente</span><span>{fmt((showPartialPayFiado?.total||0)-(showPartialPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</span></div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 block mb-1">Monto que paga</label>
+          <input type="number" inputMode="numeric" value={partialPayAmount} onChange={e=>setPartialPayAmount(e.target.value)} placeholder="0" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Método de pago</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[['efectivo','Efectivo'],['transferencia','Transfer.'],['mercadopago','Mercado Pago']].map(([k,l])=>(
+              <button key={k} onClick={()=>setPartialPayMethod(k)} className={`py-3 rounded-xl text-xs font-semibold border-2 transition active:scale-95 ${partialPayMethod===k?'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400':'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>{setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1">Cancelar</Btn>
+          <Btn v="primary" disabled={!partialPayMethod||!partialPayAmount||Number(partialPayAmount)<=0} onClick={()=>{
+            const o=showPartialPayFiado;
+            const amt=Number(partialPayAmount);
+            const partial={amount:amt,method:partialPayMethod,date:Date.now()};
+            setOrders(prev=>prev.map(x=>x.id===o.id?{...x,partialPayments:[...(x.partialPayments||[]),partial]}:x));
+            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+amt)}:c));
+            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:amt,concept:`Pago parcial fiado #${o.orderNum}`,method:partialPayMethod,createdAt:Date.now()},...prev]);
+            setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);
+          }} className="flex-1"><I d={IC.money} size={16}/>Registrar pago</Btn>
         </div>
       </div>
     </Modal>
@@ -518,9 +556,10 @@ const ClientDetail = ({client,onBack}) => {
             {o.payment?.method&&<p className="text-xs text-gray-400 mt-1">Cobro: <span className="font-semibold capitalize">{o.paidAt?o.fiadoPaidMethod||o.payment.method:o.payment.method}</span>{o.payment.amount!=null&&o.payment.method!=='fiado'?` — ${fmt(o.payment.amount)}`:''}</p>}
             {o.note&&<p className="text-xs text-gray-400 mt-1 italic">Nota: {o.note}</p>}
             {o.paidAt&&<p className="text-xs text-emerald-600 mt-1 font-semibold">Pagado el {new Date(o.paidAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p>}
+            {(o.partialPayments?.length>0)&&<div className="mt-1 space-y-0.5">{o.partialPayments.map((pp,i)=><p key={i} className="text-xs text-amber-600 dark:text-amber-400 font-medium">Pago parcial: {fmt(pp.amount)} ({pp.method}) — {new Date(pp.date).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p>)}</div>}
             {o.receipt&&<div className="mt-2"><p className="text-[10px] text-gray-400 mb-1">Comprobante</p><img src={o.receipt} className="w-full max-h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer" onClick={e=>{e.stopPropagation();window.open(o.receipt,'_blank');}}/></div>}
             {o.status==='pendiente'&&<button onClick={e=>{e.stopPropagation();markDelivered(o.id);}} className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition flex items-center justify-center gap-1"><I d={IC.check} size={14}/>Marcar como entregado</button>}
-            {o.payment?.method==='fiado'&&!o.paidAt&&<button onClick={e=>{e.stopPropagation();setShowPayFiado(o);setFiadoPayMethod(null);setFiadoReceipt(null);}} className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Ya pagó este fiado</button>}
+            {o.payment?.method==='fiado'&&!o.paidAt&&<div className="mt-3 flex gap-2"><button onClick={e=>{e.stopPropagation();setShowPartialPayFiado(o);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Pago parcial</button><button onClick={e=>{e.stopPropagation();setShowPayFiado(o);setFiadoPayMethod(null);setFiadoReceipt(null);}} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Ya pagó</button></div>}
           </div>)}
         </Card>);
       })}</div>}
@@ -659,7 +698,7 @@ const NewPaymentForm = ({client, onBack, onSave}) => {
    ============================================================ */
 const NewClientForm = ({onBack}) => {
   const {clients,setClients}=useApp();
-  const [f,sF]=useState({name:'',type:'casa',phone:'',address:'',zone:'',lat:null,lng:null,cuit:'',razonSocial:'',condicionIva:'Responsable Inscripto',notes:''});
+  const [f,sF]=useState({name:'',type:'casa',phone:'',email:'',address:'',zone:'',lat:null,lng:null,cuit:'',razonSocial:'',condicionIva:'Responsable Inscripto',notes:''});
   const [zoneAuto,setZoneAuto]=useState(true); // true = auto-detected, false = manual override
 
   const handleAddressSelect = (data) => {
@@ -700,6 +739,7 @@ const NewClientForm = ({onBack}) => {
           </div>
         )}
         <input placeholder="Teléfono" value={f.phone} onChange={e=>sF({...f,phone:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        <input placeholder="Email (opcional)" type="email" value={f.email} onChange={e=>sF({...f,email:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
 
         {/* ADDRESS with autocomplete */}
         <div>
