@@ -2161,21 +2161,32 @@ export default function App({userEmail=''}){
   },[]);
 
   // Guardar en Supabase cuando cambia algo (debounce 500ms)
+  const[saveStatus,setSaveStatus]=useState('');
   useEffect(()=>{
     if(!dbLoaded)return;
     const timer=setTimeout(async()=>{
-      const{data:{user}}=await supabase.auth.getUser();
-      if(!user)return;
-      await supabase.from('user_data').upsert({
-        user_id:user.id,
-        clients,products,orders,plans,payments,container_stock:containerStock,bottle_swaps:bottleSwaps,
-        client_plans:clientPlans,
-        pending_routes:pendingRoutes,
-        past_routes:pastRoutes,
-        order_counter:orderCounter,
-        route_counter:routeCounter,
-        updated_at:new Date().toISOString(),
-      });
+      try{
+        const{data:{user}}=await supabase.auth.getUser();
+        if(!user){setSaveStatus('❌ Sin usuario');return;}
+        const payload={
+          user_id:user.id,
+          clients,products,orders,plans,payments,container_stock:containerStock,bottle_swaps:bottleSwaps,
+          client_plans:clientPlans,
+          pending_routes:pendingRoutes,
+          past_routes:pastRoutes,
+          order_counter:orderCounter,
+          route_counter:routeCounter,
+          updated_at:new Date().toISOString(),
+        };
+        const{error}=await supabase.from('user_data').upsert(payload,{onConflict:'user_id'});
+        if(error){
+          console.error('[SAVE] error:', error);
+          setSaveStatus('❌ '+error.message);
+        } else {
+          setSaveStatus('✅ Guardado');
+        }
+      }catch(e){console.error('[SAVE] exception:',e);setSaveStatus('❌ '+e.message);}
+      setTimeout(()=>setSaveStatus(''),4000);
     },500);
     return()=>clearTimeout(timer);
   },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps]);
@@ -2183,7 +2194,7 @@ export default function App({userEmail=''}){
   const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
     <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><button onClick={()=>setShowRP(!showRP)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'} ▾</button><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div>{showRP&&<div className="max-w-lg mx-auto px-4 pb-2"><div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">{[['admin','Admin'],['repartidor','Repartidor'],['operador','Operador']].map(([r,l])=>(<button key={r} onClick={()=>{setRole(r);setShowRP(false);setView('home');}} className={`flex-1 py-2 rounded-lg text-xs font-semibold transition ${role===r?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500'}`}>{l}</button>))}</div></div>}</header>
-    <main className="max-w-lg mx-auto px-4 py-4 pb-24"><V/></main>
+    <main className="max-w-lg mx-auto px-4 py-4 pb-24">{saveStatus&&<div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs font-bold shadow-lg transition-all ${saveStatus.includes('✅')?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{saveStatus}</div>}<V/></main>
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-t border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex">{nav.map(n=>(<button key={n.k} onClick={()=>setView(n.k)} className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition ${view===n.k?'text-sky-600 dark:text-sky-400':'text-gray-400 dark:text-gray-500'}`}><I d={n.i} size={20}/><span className="text-[10px] font-semibold">{n.l}</span></button>))}</div></nav>
   </div></div></AppContext.Provider>);
 }
