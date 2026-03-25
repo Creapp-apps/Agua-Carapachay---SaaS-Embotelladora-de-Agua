@@ -316,11 +316,17 @@ const ClientsModule = () => {
 };
 
 const ClientDetail = ({client,onBack}) => {
-  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}=useApp();
+  const {products,setProducts,orders,setOrders,orderCounter,setOrderCounter,clients,setClients,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}=useApp();
   const [showNewOrder,setShowNewOrder]=useState(false);const [showPlan,setShowPlan]=useState(false);const [showNewPayment,setShowNewPayment]=useState(false);const [showReturnContainers,setShowReturnContainers]=useState(false);const [returnQtys,setReturnQtys]=useState({});const [showPayFiado,setShowPayFiado]=useState(null);const [fiadoPayMethod,setFiadoPayMethod]=useState(null);const [fiadoReceipt,setFiadoReceipt]=useState(null);const [showDeleteClient,setShowDeleteClient]=useState(false);const [showPartialPayFiado,setShowPartialPayFiado]=useState(null);const [partialPayAmount,setPartialPayAmount]=useState('');const [partialPayMethod,setPartialPayMethod]=useState(null);
   const [expandedOrder,setExpandedOrder]=useState(null);
+  const [showBottleSwap,setShowBottleSwap]=useState(false);const [swapContainerId,setSwapContainerId]=useState(null);const [swapQty,setSwapQty]=useState(1);const [swapReason,setSwapReason]=useState('');
+  const [showEditClient,setShowEditClient]=useState(false);
+  const [confirmDelOrder,setConfirmDelOrder]=useState(null);const [confirmDelPayment,setConfirmDelPayment]=useState(null);const [confirmDelSwap,setConfirmDelSwap]=useState(null);
+  const [editingOrder,setEditingOrder]=useState(null);
+  const [showPlanDelivery,setShowPlanDelivery]=useState(false);const [deliveryQtys,setDeliveryQtys]=useState({});
   const clientOrders = (orders||[]).filter(o=>o.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const clientPayments = (payments||[]).filter(p=>p.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
+  const clientSwaps = (bottleSwaps||[]).filter(s=>s.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const cur = clients.find(c=>c.id===client.id)||client;
   const createOrder = (orderItems,note,payment) => {
     const total=orderItems.reduce((s,it)=>s+it.price*it.qty,0);
@@ -328,12 +334,20 @@ const ClientDetail = ({client,onBack}) => {
     const order={id:Date.now(),orderNum,clientId:client.id,clientName:client.name,items:orderItems,total,note,payment:payment||{},status:'pendiente',createdAt:Date.now()};
     setOrders(prev=>[order,...prev]);
     setOrderCounter(prev=>prev+1);
-    // Descontar stock
+    // Descontar stock de productos
     setProducts(prev=>prev.map(p=>{const it=orderItems.find(x=>x.productId===p.id);return it?{...p,stock:Math.max(0,p.stock-it.qty)}:p;}));
-    // Actualizar saldo si quedó deuda
-    const paid=payment?.amount||0;
-    const debt=total-paid;
-    setClients(prev=>prev.map(c=>c.id===client.id?{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:debt>0?c.balance-debt:c.balance}:c));
+    // Descontar envases del depósito y sumar al cliente
+    const outByContainer={};
+    orderItems.forEach(it=>{const p=products.find(x=>x.id===it.productId);if(p?.returnable&&p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
+    if(Object.keys(outByContainer).length>0){
+      setContainerStock(prev=>prev.map(ct=>({...ct,stock:Math.max(0,ct.stock-(outByContainer[ct.id]||0))})));
+      setClients(prev=>prev.map(c=>{if(c.id!==client.id)return c;const nc={...(c.containers||{})};Object.entries(outByContainer).forEach(([id,qty])=>{nc[Number(id)]=(nc[Number(id)]||0)+qty;});return{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:total-(payment?.amount||0)>0?c.balance-(total-(payment?.amount||0)):c.balance,containers:nc};}));
+    } else {
+      // Actualizar saldo si quedó deuda (sin envases)
+      const paid=payment?.amount||0;
+      const debt=total-paid;
+      setClients(prev=>prev.map(c=>c.id===client.id?{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:debt>0?c.balance-debt:c.balance}:c));
+    }
     setShowNewOrder(false);
   };
   const markDelivered = (orderId) => {
@@ -342,6 +356,8 @@ const ClientDetail = ({client,onBack}) => {
   if(showPlan) return (<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>);
   if(showNewOrder) return (<NewOrderForm client={cur} onBack={()=>setShowNewOrder(false)} onSave={createOrder}/>);
   if(showNewPayment) return (<NewPaymentForm client={cur} onBack={()=>setShowNewPayment(false)} onSave={(amount,concept,method)=>{setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount,concept,method,createdAt:Date.now()},...prev]);setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+amount)}:c));setShowNewPayment(false);}}/>);
+  if(showEditClient) return (<EditClientForm client={cur} onBack={()=>setShowEditClient(false)}/>);
+  if(editingOrder) return (<EditOrderForm order={editingOrder} client={cur} onBack={()=>setEditingOrder(null)}/>);
   const printRemito = (order) => {
     const date = new Date(order.createdAt).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
     const cuitFmt = cur.cuit ? cur.cuit.replace(/(\d{2})(\d{8})(\d{1})/,'$1-$2-$3') : '';
@@ -352,16 +368,17 @@ const ClientDetail = ({client,onBack}) => {
   };
 
   return(<div className="space-y-4"><BackBtn onClick={onBack}/>
-    <div><div className="flex items-center gap-2 flex-wrap mb-1"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{cur.name}</h2><Badge variant={cur.type==='empresa'?'info':'default'}>{cur.type==='empresa'?'Empresa':'Casa'}</Badge>{cur.zone&&<Badge variant="violet">{cur.zone}</Badge>}</div><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1"><I d={IC.pin} size={14}/>{cur.address}</p>
+    <div><div className="flex items-center gap-2 flex-wrap mb-1"><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{cur.name}</h2><Badge variant={cur.type==='empresa'?'info':'default'}>{cur.type==='empresa'?'Empresa':'Casa'}</Badge>{cur.zone&&<Badge variant="violet">{cur.zone}</Badge>}<button onClick={()=>setShowEditClient(true)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-sky-600 transition" title="Editar cliente"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div><p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1"><I d={IC.pin} size={14}/>{cur.address}</p>
     {cur.type==='empresa'&&(cur.cuit||cur.condicionIva)&&<div className="mt-2 p-2.5 bg-sky-50 dark:bg-sky-900/10 rounded-xl border border-sky-200 dark:border-sky-800 space-y-0.5"><p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">CUIT:</span> {cur.cuit?cur.cuit.replace(/(\d{2})(\d{8})(\d{1})/,'$1-$2-$3'):'-'}</p><p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">IVA:</span> {cur.condicionIva||'-'}</p>{cur.razonSocial&&<p className="text-xs text-sky-700 dark:text-sky-400"><span className="font-semibold">Razón Social:</span> {cur.razonSocial}</p>}</div>}
     {cur.notes&&<div className="mt-2 flex items-start gap-1.5 p-2.5 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-800"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p className="text-xs text-amber-700 dark:text-amber-400">{cur.notes}</p></div>}
     </div>
     {cur.lat&&<RouteMap stops={[{...cur,clientName:cur.name}]} height={180} showRoute={false}/>}
     <div className="flex gap-2"><a href={'tel:'+cur.phone} className="flex-1"><Btn v="secondary" className="w-full"><I d={IC.phone} size={16}/>Llamar</Btn></a><a href={'https://wa.me/549'+cur.phone} target="_blank" rel="noopener" className="flex-1"><Btn v="success" className="w-full">WhatsApp</Btn></a></div>
     {cur.email&&<a href={'mailto:'+cur.email}><p className="text-sm text-sky-600 dark:text-sky-400 flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>{cur.email}</p></a>}
-    <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/>{containerStock.map(ct=><Stat key={ct.id} label={ct.name} value={cur.containers?.[ct.id]||0}/>)}</div>
+    <div className="grid grid-cols-2 gap-3"><Stat label="Saldo" value={fmt(cur.balance)} variant={cur.balance<0?'danger':cur.balance>0?'success':'default'}/><Stat label="Ultimo pedido" value={cur.lastOrder||'\u2014'}/>{containerStock.map(ct=><Stat key={ct.id} label={ct.size?`${ct.name} ${ct.size}`:ct.name} value={cur.containers?.[ct.id]||0}/>)}</div>
     <div className="flex gap-2"><Btn v="primary" onClick={()=>setShowNewOrder(true)} className="flex-1" size="lg"><I d={IC.plus} size={20}/>Nuevo pedido</Btn><Btn v="success" onClick={()=>setShowNewPayment(true)} className="flex-1" size="lg"><I d={IC.money} size={20}/>Cobro</Btn></div>
     {containerStock.length>0&&<Btn v="outline" onClick={()=>{setReturnQtys({});setShowReturnContainers(true);}} className="w-full"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Retirar envases</Btn>}
+    {containerStock.length>0&&<Btn v="outline" onClick={()=>{setShowBottleSwap(true);setSwapContainerId(containerStock[0]?.id||null);setSwapQty(1);setSwapReason('');}} className="w-full"><I d={IC.box} size={16}/>Cambio de bidón</Btn>}
     <Btn v="danger" onClick={()=>setShowDeleteClient(true)} className="w-full"><I d={IC.x} size={16}/>Eliminar cliente</Btn>
     <Modal open={showDeleteClient} onClose={()=>setShowDeleteClient(false)} title="Eliminar cliente">
       <div className="space-y-4">
@@ -377,7 +394,7 @@ const ClientDetail = ({client,onBack}) => {
         <p className="text-xs text-gray-500">Ingresá cuántos envases te devuelve {cur.name}</p>
         <div className="space-y-3">{containerStock.map(ct=>(
           <div key={ct.id} className="flex items-center justify-between gap-3">
-            <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ct.name}</p><p className="text-xs text-gray-400">Tiene: {cur.containers?.[ct.id]||0}</p></div>
+            <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ct.size?`${ct.name} ${ct.size}`:ct.name}</p><p className="text-xs text-gray-400">Tiene: {cur.containers?.[ct.id]||0}</p></div>
             <Qty value={returnQtys[ct.id]||0} onChange={v=>setReturnQtys(p=>({...p,[ct.id]:v}))} />
           </div>
         ))}</div>
@@ -418,7 +435,7 @@ const ClientDetail = ({client,onBack}) => {
             <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
               <I d={IC.camera} size={28} className="text-gray-400"/>
               <span className="text-xs text-gray-400 text-center">Tocá para adjuntar foto o imagen del comprobante</span>
-              <input type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFiadoReceipt(ev.target?.result);r.readAsDataURL(f);}} className="hidden"/>
+              <input type="file" accept="image/*,.pdf" onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFiadoReceipt(ev.target?.result);r.readAsDataURL(f);}} className="hidden"/>
             </label>
           )}
         </div>
@@ -471,64 +488,166 @@ const ClientDetail = ({client,onBack}) => {
       </div>
     </Modal>
 
-    {/* PLAN INFO */}
+    {/* BOTTLE SWAP MODAL */}
+    <Modal open={showBottleSwap} onClose={()=>setShowBottleSwap(false)} title="Cambio de bidón">
+      <div className="space-y-4">
+        <p className="text-xs text-gray-500">Registrá un cambio de envase para {cur.name}. El stock no cambia (sale uno nuevo, vuelve el viejo).</p>
+        {containerStock.length>1&&<div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Tipo de envase</p>
+          <div className="flex flex-wrap gap-2">
+            {containerStock.map(ct=>(
+              <button key={ct.id} onClick={()=>setSwapContainerId(ct.id)} className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition active:scale-95 ${swapContainerId===ct.id?'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400':'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{ct.size?`${ct.name} ${ct.size}`:ct.name}</button>
+            ))}
+          </div>
+        </div>}
+        {containerStock.length===1&&<div className="bg-sky-50 dark:bg-sky-900/20 rounded-xl p-3"><p className="text-sm font-semibold text-sky-700 dark:text-sky-400">{containerStock[0].size?`${containerStock[0].name} ${containerStock[0].size}`:containerStock[0].name}</p></div>}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Cantidad</p>
+          <Qty value={swapQty} onChange={setSwapQty} min={1}/>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">Motivo <span className="font-normal text-gray-400">(opcional)</span></label>
+          <input placeholder="Ej: Bidón rajado, agua turbia..." value={swapReason} onChange={e=>setSwapReason(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        </div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setShowBottleSwap(false)} className="flex-1">Cancelar</Btn>
+          <Btn v="primary" disabled={!swapContainerId||swapQty<=0} onClick={()=>{
+            const ct=containerStock.find(c=>c.id===swapContainerId);
+            setBottleSwaps(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,containerId:swapContainerId,containerName:ct?.name||'Envase',qty:swapQty,reason:swapReason.trim(),createdAt:Date.now()},...(prev||[])]);
+            setShowBottleSwap(false);
+          }} className="flex-1"><I d={IC.check} size={16}/>Confirmar cambio</Btn>
+        </div>
+      </div>
+    </Modal>
+
+    {/* PLAN INFO — partial deliveries */}
     {(()=>{
       const cp=(clientPlans||[]).find(x=>x.clientId===client.id&&x.active);
       if(!cp) return showPlan?<AssignPlanForm client={cur} onBack={()=>setShowPlan(false)}/>:<Btn v="outline" onClick={()=>setShowPlan(true)} className="w-full"><I d={IC.file} size={16}/>Asignar plan mensual</Btn>;
       const thisMonth=new Date().toISOString().slice(0,7);
-      const delivered=(cp.deliveredMonths||[]);
-      const lastDelivery=delivered.length>0?delivered.reduce((a,b)=>((b.deliveredAt||0)>(a.deliveredAt||0)?b:a)):null;
-      const daysSinceLast=lastDelivery?Math.floor((Date.now()-(lastDelivery.deliveredAt||0))/(1000*60*60*24)):999;
-      const daysUntilNext=Math.max(0,30-daysSinceLast);
-      const canDeliver=daysUntilNext===0;
-      const streak=(()=>{let s=0;const now=new Date();for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.toISOString().slice(0,7);if(delivered.find(x=>x.month===k))s++;else break;}return s;})();
-      const deliverPlan=()=>{
-        setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:[...(x.deliveredMonths||[]),{month:thisMonth,deliveredAt:Date.now()}]}:x));
-        setProducts(prev=>prev.map(p=>{const inc=cp.includes?.find(i=>i.productId===p.id);return inc?{...p,stock:Math.max(0,p.stock-inc.qty)}:p;}));
+      const monthDeliveries=(cp.deliveredMonths||[]).filter(d=>d.month===thisMonth);
+      // Calculate delivered qty per product this month
+      const deliveredByProduct={};
+      monthDeliveries.forEach(d=>{(d.items||[]).forEach(it=>{deliveredByProduct[it.productId]=(deliveredByProduct[it.productId]||0)+it.qty;});});
+      // For backwards compat: old-style deliveries without items count as full delivery
+      const hasOldStyleDelivery=monthDeliveries.some(d=>!d.items);
+      const totalIncluded=(cp.includes||[]).reduce((s,inc)=>s+inc.qty,0);
+      const totalDelivered=hasOldStyleDelivery?totalIncluded:(cp.includes||[]).reduce((s,inc)=>s+(deliveredByProduct[inc.productId]||0),0);
+      const isComplete=totalDelivered>=totalIncluded;
+      const lastDelivery=monthDeliveries.length>0?monthDeliveries[monthDeliveries.length-1]:null;
+
+      const openDeliveryForm=()=>{
+        const q={};
+        (cp.includes||[]).forEach(inc=>{
+          const already=deliveredByProduct[inc.productId]||0;
+          q[inc.productId]=Math.max(0,inc.qty-already);
+        });
+        setDeliveryQtys(q);
+        setShowPlanDelivery(true);
       };
+
+      const confirmDelivery=()=>{
+        const items=Object.entries(deliveryQtys).filter(([,qty])=>qty>0).map(([pid,qty])=>({productId:Number(pid),qty}));
+        if(items.length===0)return;
+        // Record partial delivery
+        setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:[...(x.deliveredMonths||[]),{month:thisMonth,deliveredAt:Date.now(),items}]}:x));
+        // Deduct product stock
+        setProducts(prev=>prev.map(p=>{const it=items.find(i=>i.productId===p.id);return it?{...p,stock:Math.max(0,p.stock-it.qty)}:p;}));
+        // Deduct container stock + add to client
+        const outByContainer={};
+        items.forEach(it=>{const p=products.find(x=>x.id===it.productId);if(p?.returnable&&p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
+        if(Object.keys(outByContainer).length>0){
+          setContainerStock(prev=>prev.map(ct=>({...ct,stock:Math.max(0,ct.stock-(outByContainer[ct.id]||0))})));
+          setClients(prev=>prev.map(c=>{if(c.id!==client.id)return c;const nc={...(c.containers||{})};Object.entries(outByContainer).forEach(([id,qty])=>{nc[Number(id)]=(nc[Number(id)]||0)+qty;});return{...c,containers:nc};}));
+        }
+        setShowPlanDelivery(false);
+      };
+
       return(<div className="space-y-2">
-        <Card className={'!p-4 '+(!canDeliver?'!border-emerald-200 dark:!border-emerald-800 !bg-emerald-50/50 dark:!bg-emerald-900/10':'!border-amber-200 dark:!border-amber-800 !bg-amber-50/50 dark:!bg-amber-900/10')}>
+        <Card className={'!p-4 '+(isComplete?'!border-emerald-200 dark:!border-emerald-800 !bg-emerald-50/50 dark:!bg-emerald-900/10':'!border-amber-200 dark:!border-amber-800 !bg-amber-50/50 dark:!bg-amber-900/10')}>
           <div className="flex items-start justify-between mb-3">
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <span className={`text-[11px] font-bold uppercase tracking-wide ${!canDeliver?'text-emerald-600':'text-amber-600'}`}>{!canDeliver?'Plan entregado':'Plan pendiente de entrega'}</span>
-                {streak>1&&<span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-600 px-1.5 py-0.5 rounded-full">🔥 {streak} meses</span>}
+                <span className={`text-[11px] font-bold uppercase tracking-wide ${isComplete?'text-emerald-600':'text-amber-600'}`}>{isComplete?'✅ Plan completo este mes':'Plan en curso'}</span>
               </div>
               <p className="font-bold text-sm text-gray-900 dark:text-gray-100">{cp.planName}</p>
             </div>
             <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{fmt(cp.price)}<span className="text-[10px] font-normal text-gray-400">/mes</span></span>
           </div>
-          <div className="space-y-2 mb-3">{(cp.includes||[]).map((inc,i)=>(
-            <div key={i} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${!canDeliver?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{inc.qty}</div>
-              <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">{inc.productName}</span>
-              {!canDeliver&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500 shrink-0"><polyline points="20 6 9 17 4 12"/></svg>}
-            </div>
-          ))}</div>
-          {cp.includesMachine&&<Badge variant="info" className="mb-3">Maquina incluida</Badge>}
-          {!canDeliver?(
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl p-3">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600 shrink-0"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <div className="flex-1"><p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Entregado · próxima en {daysUntilNext} día{daysUntilNext!==1?'s':''}</p><p className="text-[10px] text-emerald-600/70">{lastDelivery&&new Date(lastDelivery.deliveredAt).toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</p></div>
-                <button onClick={()=>setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:(x.deliveredMonths||[]).filter(d=>d.deliveredAt!==lastDelivery.deliveredAt)}:x))} className="text-[10px] text-gray-400 hover:text-red-400">Deshacer</button>
+          {/* Per-product progress */}
+          <div className="space-y-2.5 mb-3">{(cp.includes||[]).map((inc,i)=>{
+            const delivered=hasOldStyleDelivery?inc.qty:(deliveredByProduct[inc.productId]||0);
+            const pct=inc.qty>0?Math.min(100,Math.round(delivered/inc.qty*100)):0;
+            return(
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{inc.productName}</span>
+                  <span className={`text-xs font-bold tabular-nums ${delivered>=inc.qty?'text-emerald-600':'text-amber-600'}`}>{delivered}/{inc.qty}</span>
+                </div>
+                <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-500 ${pct>=100?'bg-emerald-400':'bg-amber-400'}`} style={{width:`${pct}%`}}/>
+                </div>
               </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5"><div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{width:`${Math.round((daysSinceLast/30)*100)}%`}}/></div>
-              <p className="text-[10px] text-center text-gray-400">{daysSinceLast} de 30 días transcurridos</p>
-            </div>
-          ):(
-            <button onClick={deliverPlan} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm transition active:scale-[0.97] flex items-center justify-center gap-2 shadow-md shadow-amber-500/30">
-              <I d={IC.truck} size={18}/>Marcar entrega del mes
+            );
+          })}</div>
+          {cp.includesMachine&&<Badge variant="info" className="mb-3">Maquina incluida</Badge>}
+          {/* Actions */}
+          {!isComplete?(
+            <button onClick={openDeliveryForm} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-sm transition active:scale-[0.97] flex items-center justify-center gap-2 shadow-md shadow-amber-500/30">
+              <I d={IC.truck} size={18}/>Entregar ({totalDelivered}/{totalIncluded})
             </button>
+          ):(
+            <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded-xl p-3 text-center">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Entrega completa del mes</p>
+              <p className="text-[10px] text-emerald-600/70 mt-0.5">{monthDeliveries.length} entrega{monthDeliveries.length!==1?'s':''} realizadas</p>
+            </div>
           )}
-          <div className="flex gap-3 mt-2"><p className="text-[10px] text-gray-400">Cobro: {cp.billing==='inicio_mes'?'Inicio de mes':cp.billing==='fin_mes'?'Fin de mes':cp.billing==='repartidor'?'Cuando pasa el repartidor':'Dia '+cp.customDay}</p></div>
-          <button onClick={()=>setShowPlan(true)} className="text-xs text-sky-600 font-semibold mt-1">Cambiar plan</button>
+          {/* Delivery history this month */}
+          {monthDeliveries.length>0&&<div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Entregas del mes</p>
+            <div className="space-y-1">{monthDeliveries.map((d,i)=>(
+              <div key={i} className="flex items-center justify-between text-[11px]">
+                <span className="text-gray-500">{new Date(d.deliveredAt).toLocaleDateString('es-AR',{day:'numeric',month:'short'})}</span>
+                <span className="text-gray-700 dark:text-gray-300 font-medium">{d.items?(d.items.map(it=>`${it.qty}x ${(cp.includes||[]).find(inc=>inc.productId===it.productId)?.productName||'?'}`).join(', ')):'Entrega completa'}</span>
+                <button onClick={()=>setClientPlans(prev=>prev.map(x=>x.id===cp.id?{...x,deliveredMonths:(x.deliveredMonths||[]).filter((_,idx)=>idx!==((x.deliveredMonths||[]).indexOf(d)))}:x))} className="text-[10px] text-gray-300 hover:text-red-400">×</button>
+              </div>
+            ))}</div>
+          </div>}
+          <button onClick={()=>setShowPlan(true)} className="text-xs text-sky-600 font-semibold mt-2">Cambiar plan</button>
         </Card>
-        {delivered.length>0&&<div className="flex items-center gap-1.5 px-1">{['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m,i)=>{const year=new Date().getFullYear();const key=`${year}-${String(i+1).padStart(2,'0')}`;const done=delivered.find(d=>d.month===key);const isFuture=new Date(year,i,1)>new Date();return(<div key={i} title={m} className={`flex-1 h-2 rounded-full transition-all ${done?'bg-emerald-400':isFuture?'bg-gray-100 dark:bg-gray-800':'bg-gray-200 dark:bg-gray-700'}`}/>);})}</div>}
+
+        {/* Partial delivery modal */}
+        <Modal open={showPlanDelivery} onClose={()=>setShowPlanDelivery(false)} title="Registrar entrega">
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500">¿Cuánto le entregás hoy a {cur.name}?</p>
+            <div className="space-y-3">{(cp.includes||[]).map((inc,i)=>{
+              const already=deliveredByProduct[inc.productId]||0;
+              const remaining=Math.max(0,inc.qty-already);
+              return(
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{inc.productName}</p>
+                    <p className="text-[10px] text-gray-400">Faltan {remaining} de {inc.qty}</p>
+                  </div>
+                  <Qty value={deliveryQtys[inc.productId]||0} onChange={v=>setDeliveryQtys(p=>({...p,[inc.productId]:Math.min(v,remaining)}))} />
+                </div>
+              );
+            })}</div>
+            <div className="flex gap-2">
+              <Btn v="secondary" onClick={()=>setShowPlanDelivery(false)} className="flex-1">Cancelar</Btn>
+              <Btn v="success" onClick={confirmDelivery} disabled={Object.values(deliveryQtys).every(v=>!v||v<=0)} className="flex-1"><I d={IC.truck} size={16}/>Confirmar entrega</Btn>
+            </div>
+          </div>
+        </Modal>
+
+        {(cp.deliveredMonths||[]).length>0&&<div className="flex items-center gap-1.5 px-1">{['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'].map((m,i)=>{const year=new Date().getFullYear();const key=`${year}-${String(i+1).padStart(2,'0')}`;const done=(cp.deliveredMonths||[]).find(d=>d.month===key);const isFuture=new Date(year,i,1)>new Date();return(<div key={i} title={m} className={`flex-1 h-2 rounded-full transition-all ${done?'bg-emerald-400':isFuture?'bg-gray-100 dark:bg-gray-800':'bg-gray-200 dark:bg-gray-700'}`}/>);})}</div>}
       </div>);
     })()}
+    {clientSwaps.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Cambios de bidón ({clientSwaps.length})</p>
+      <div className="space-y-2">{clientSwaps.map(s=>(<Card key={s.id} className="!p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0"><I d={IC.box} size={18} className="text-sky-600"/></div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{s.qty}x {s.containerName}</p><p className="text-xs text-gray-400">{new Date(s.createdAt).toLocaleDateString('es-AR')}{s.reason&&` · ${s.reason}`}</p></div><button onClick={()=>setConfirmDelSwap(s)} className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={14}/></button></div></Card>))}</div>
+    </div>}
     {clientPayments.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Cobros ({clientPayments.length})</p>
-      <div className="space-y-2">{clientPayments.map(p=>(<Card key={p.id} className="!p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0"><I d={IC.money} size={18} className="text-emerald-600"/></div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.concept}</p><p className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('es-AR')} · <span className="capitalize">{p.method}</span></p></div><span className="text-sm font-bold text-emerald-600">{fmt(p.amount)}</span></div></Card>))}</div>
+      <div className="space-y-2">{clientPayments.map(p=>(<Card key={p.id} className="!p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0"><I d={IC.money} size={18} className="text-emerald-600"/></div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.concept}</p><p className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('es-AR')} · <span className="capitalize">{p.method}</span></p></div><span className="text-sm font-bold text-emerald-600 mr-1">{fmt(p.amount)}</span><button onClick={()=>setConfirmDelPayment(p)} className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition shrink-0"><I d={IC.x} size={14}/></button></div></Card>))}</div>
     </div>}
     <div><div className="flex items-center justify-between mb-2"><p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{'Pedidos ('+clientOrders.length+')'}</p></div>
       {clientOrders.length===0?<p className="text-sm text-gray-400 text-center py-4">Sin pedidos todavia</p>:
@@ -560,10 +679,66 @@ const ClientDetail = ({client,onBack}) => {
             {o.receipt&&<div className="mt-2"><p className="text-[10px] text-gray-400 mb-1">Comprobante</p><img src={o.receipt} className="w-full max-h-48 object-cover rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer" onClick={e=>{e.stopPropagation();window.open(o.receipt,'_blank');}}/></div>}
             {o.status==='pendiente'&&<button onClick={e=>{e.stopPropagation();markDelivered(o.id);}} className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition flex items-center justify-center gap-1"><I d={IC.check} size={14}/>Marcar como entregado</button>}
             {o.payment?.method==='fiado'&&!o.paidAt&&<div className="mt-3 flex gap-2"><button onClick={e=>{e.stopPropagation();setShowPartialPayFiado(o);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Pago parcial</button><button onClick={e=>{e.stopPropagation();setShowPayFiado(o);setFiadoPayMethod(null);setFiadoReceipt(null);}} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition flex items-center justify-center gap-1"><I d={IC.money} size={14}/>Ya pagó</button></div>}
+            <div className="mt-3 flex gap-2">
+              <button onClick={e=>{e.stopPropagation();setEditingOrder(o);}} className="flex-1 py-2 rounded-lg text-xs font-semibold text-sky-600 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition flex items-center justify-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
+              <button onClick={e=>{e.stopPropagation();setConfirmDelOrder(o);}} className="flex-1 py-2 rounded-lg text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 transition flex items-center justify-center gap-1"><I d={IC.x} size={14}/>Eliminar</button>
+            </div>
           </div>)}
         </Card>);
       })}</div>}
     </div>
+
+    {/* CONFIRM DELETE ORDER */}
+    <Modal open={!!confirmDelOrder} onClose={()=>setConfirmDelOrder(null)} title="Eliminar pedido">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300">¿Seguro que querés eliminar el pedido <b>#{confirmDelOrder?.orderNum}</b> por <b>{fmt(confirmDelOrder?.total||0)}</b>?</p>
+        {confirmDelOrder?.payment?.method==='fiado'&&!confirmDelOrder?.paidAt&&<div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3"><p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">Se revertirá la deuda de {fmt(confirmDelOrder?.total||0)} del saldo del cliente.</p></div>}
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setConfirmDelOrder(null)} className="flex-1">Cancelar</Btn>
+          <Btn v="danger" onClick={()=>{
+            const o=confirmDelOrder;
+            setOrders(prev=>prev.filter(x=>x.id!==o.id));
+            if(o.payment?.method==='fiado'&&!o.paidAt){
+              const alreadyPaid=(o.partialPayments||[]).reduce((s,p)=>s+p.amount,0);
+              const debt=o.total-alreadyPaid;
+              setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance+debt}:c));
+            }
+            setConfirmDelOrder(null);
+          }} className="flex-1">Eliminar</Btn>
+        </div>
+      </div>
+    </Modal>
+
+    {/* CONFIRM DELETE PAYMENT */}
+    <Modal open={!!confirmDelPayment} onClose={()=>setConfirmDelPayment(null)} title="Eliminar cobro">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300">¿Seguro que querés eliminar el cobro <b>{confirmDelPayment?.concept}</b> por <b>{fmt(confirmDelPayment?.amount||0)}</b>?</p>
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3"><p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">Se revertirá el monto de {fmt(confirmDelPayment?.amount||0)} del saldo del cliente.</p></div>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setConfirmDelPayment(null)} className="flex-1">Cancelar</Btn>
+          <Btn v="danger" onClick={()=>{
+            const p=confirmDelPayment;
+            setPayments(prev=>prev.filter(x=>x.id!==p.id));
+            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:c.balance-(p.amount||0)}:c));
+            setConfirmDelPayment(null);
+          }} className="flex-1">Eliminar</Btn>
+        </div>
+      </div>
+    </Modal>
+
+    {/* CONFIRM DELETE SWAP */}
+    <Modal open={!!confirmDelSwap} onClose={()=>setConfirmDelSwap(null)} title="Eliminar cambio de bidón">
+      <div className="space-y-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300">¿Seguro que querés eliminar el registro de cambio de <b>{confirmDelSwap?.qty}x {confirmDelSwap?.containerName}</b>?</p>
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setConfirmDelSwap(null)} className="flex-1">Cancelar</Btn>
+          <Btn v="danger" onClick={()=>{
+            setBottleSwaps(prev=>prev.filter(x=>x.id!==confirmDelSwap.id));
+            setConfirmDelSwap(null);
+          }} className="flex-1">Eliminar</Btn>
+        </div>
+      </div>
+    </Modal>
   </div>);
 };
 const NewOrderForm = ({client,onBack,onSave}) => {
@@ -694,6 +869,93 @@ const NewPaymentForm = ({client, onBack, onSave}) => {
 };
 
 /* ============================================================
+   EDIT ORDER FORM
+   ============================================================ */
+const EditOrderForm = ({order, client, onBack}) => {
+  const {products, orders, setOrders, clients, setClients} = useApp();
+  const [items, setItems] = useState(
+    products.filter(p => p.price > 0).map(p => {
+      const existing = order.items.find(it => it.productId === p.id || it.name === p.name);
+      return {...p, qty: existing ? existing.qty : 0};
+    })
+  );
+  const [note, setNote] = useState(order.note || '');
+  const [status, setStatus] = useState(order.status || 'pendiente');
+
+  const total = items.reduce((s, it) => s + it.price * it.qty, 0);
+  const hasItems = items.some(it => it.qty > 0);
+
+  const save = () => {
+    if (!hasItems) return;
+    const oldTotal = order.total;
+    const newItems = items.filter(it => it.qty > 0).map(it => ({productId: it.id, name: it.name, qty: it.qty, price: it.price, unit: it.unit}));
+
+    // Update order
+    setOrders(prev => prev.map(o => o.id === order.id ? {...o, items: newItems, total, note, status} : o));
+
+    // If fiado and not paid, adjust client balance for difference
+    if (order.payment?.method === 'fiado' && !order.paidAt && total !== oldTotal) {
+      const diff = total - oldTotal; // positive = more debt, negative = less debt
+      setClients(prev => prev.map(c => c.id === client.id ? {...c, balance: c.balance - diff} : c));
+    }
+
+    onBack();
+  };
+
+  return (
+    <div className="space-y-4">
+      <BackBtn onClick={onBack}/>
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-600"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+        <div><h3 className="font-bold text-gray-900 dark:text-gray-100">Editar pedido #{order.orderNum}</h3><p className="text-xs text-gray-500">{client.name}</p></div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Estado</p>
+        <div className="flex gap-2">
+          {[['pendiente','Pendiente'],['entregado','Entregado']].map(([k,l])=>(
+            <button key={k} onClick={()=>setStatus(k)} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${status===k?(k==='entregado'?'bg-emerald-600 text-white':'bg-amber-500 text-white'):'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Productos</p>
+        <div className="space-y-2">
+          {items.map(it => (
+            <Card key={it.id} className="!p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p>
+                  <p className="text-xs text-gray-400">{fmt(it.price)}</p>
+                </div>
+                <Qty value={it.qty} onChange={v => setItems(p => p.map(x => x.id === it.id ? {...x, qty: v} : x))}/>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center">
+        <span className="text-xs text-gray-400">Total</span>
+        <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p>
+        {total !== order.total && <p className="text-xs text-amber-600 mt-1">Antes: {fmt(order.total)} → Ahora: {fmt(total)}</p>}
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Nota <span className="text-gray-400">(opcional)</span></label>
+        <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Nota del pedido..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+      </div>
+
+      <div className="flex gap-2">
+        <Btn v="secondary" onClick={onBack} className="flex-1">Cancelar</Btn>
+        <Btn v="primary" onClick={save} disabled={!hasItems} className="flex-1"><I d={IC.check} size={16}/>Guardar cambios</Btn>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
    NEW CLIENT FORM with ADDRESS AUTOCOMPLETE + AUTO-ZONE
    ============================================================ */
 const NewClientForm = ({onBack}) => {
@@ -797,6 +1059,107 @@ const NewClientForm = ({onBack}) => {
 };
 
 /* ============================================================
+   EDIT CLIENT FORM
+   ============================================================ */
+const EditClientForm = ({client, onBack}) => {
+  const {clients, setClients} = useApp();
+  const [f, sF] = useState({
+    name: client.name || '', type: client.type || 'casa', phone: client.phone || '', email: client.email || '',
+    address: client.address || '', zone: client.zone || '', lat: client.lat || null, lng: client.lng || null,
+    cuit: client.cuit || '', razonSocial: client.razonSocial || '', condicionIva: client.condicionIva || 'Responsable Inscripto',
+    notes: client.notes || '',
+  });
+  const [zoneAuto, setZoneAuto] = useState(false);
+
+  const handleAddressSelect = (data) => {
+    sF(prev => ({
+      ...prev, address: data.address, lat: data.lat, lng: data.lng,
+      zone: data.zone || prev.zone,
+    }));
+    if (data.zone) setZoneAuto(true);
+  };
+
+  const save = () => {
+    if (!f.name) return;
+    setClients(prev => prev.map(c => c.id === client.id ? {...c, ...f} : c));
+    onBack();
+  };
+
+  return (
+    <div className="space-y-4">
+      <BackBtn onClick={onBack}/>
+      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Editar cliente</h2>
+      <div className="space-y-3">
+        <input placeholder="Nombre / Razón Social" value={f.name} onChange={e=>sF({...f,name:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        <div className="flex gap-2">{['casa','empresa'].map(t=>(<button key={t} onClick={()=>sF({...f,type:t})} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${f.type===t?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}>{t==='casa'?'Casa':'Empresa'}</button>))}</div>
+        {f.type==='empresa'&&(
+          <div className="space-y-3 p-3 bg-sky-50 dark:bg-sky-900/10 rounded-xl border border-sky-200 dark:border-sky-800">
+            <p className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wide">Datos de facturación</p>
+            <input placeholder="Razón Social" value={f.razonSocial} onChange={e=>sF({...f,razonSocial:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            <input placeholder="CUIT (sin guiones)" value={f.cuit} onChange={e=>sF({...f,cuit:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Condición IVA</label>
+              <select value={f.condicionIva} onChange={e=>sF({...f,condicionIva:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                {['Responsable Inscripto','Monotributo','Exento','Consumidor Final'].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+        <input placeholder="Teléfono" value={f.phone} onChange={e=>sF({...f,phone:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        <input placeholder="Email (opcional)" type="email" value={f.email} onChange={e=>sF({...f,email:e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Dirección</label>
+          <AddressInput value={f.address} onChange={v=>sF({...f,address:v})} onSelect={handleAddressSelect}/>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">Zona</label>
+            {f.zone && zoneAuto && (
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                <I d={IC.check} size={12}/> Detectada automáticamente
+              </span>
+            )}
+          </div>
+          {f.zone ? (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 px-4 py-2.5 rounded-xl bg-violet-50 dark:bg-violet-900/20 border-2 border-violet-300 dark:border-violet-700 text-sm font-semibold text-violet-700 dark:text-violet-400">
+                {f.zone}
+              </div>
+              <button onClick={() => { sF({...f, zone: ''}); setZoneAuto(false); }}
+                className="px-3 py-2.5 rounded-xl text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700">
+                Cambiar
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].map(z=>(
+                    <button key={z} onClick={()=>{sF({...f,zone:z});setZoneAuto(false);}}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 hover:text-violet-700 dark:hover:text-violet-400 transition">{z}</button>
+                  ))}
+                </div>
+              )}
+              <input placeholder="O escribí una zona nueva..." onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim()){sF({...f,zone:e.target.value.trim()});setZoneAuto(false);}}} onBlur={e=>{if(e.target.value.trim()){sF({...f,zone:e.target.value.trim()});setZoneAuto(false);}}} className="w-full px-4 py-2.5 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400" />
+            </div>
+          )}
+        </div>
+
+        {f.lat && <RouteMap stops={[{lat:f.lat,lng:f.lng,name:f.name||'Cliente',address:f.address,clientName:f.name||'Cliente'}]} height={160} showRoute={false}/>}
+
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Observaciones de entrega <span className="text-gray-400">(opcional)</span></label>
+          <textarea placeholder="Ej: Piso 3, timbre B. Casa de rejas verdes." value={f.notes} onChange={e=>sF({...f,notes:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30 resize-none"/>
+        </div>
+      </div>
+      <Btn v="primary" onClick={save} disabled={!f.name} className="w-full">Guardar cambios</Btn>
+    </div>
+  );
+};
+
+/* ============================================================
    MÓDULO 2: STOCK — with minStock, hide/delete, stock bar
    ============================================================ */
 const StockBar = ({stock, minStock}) => {
@@ -824,9 +1187,11 @@ const StockModule = () => {
   const [editing, setEditing] = useState(null);
   const [showHidden, setShowHidden] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [newContainerName, setNewContainerName] = useState('');
   const [showNewContainer, setShowNewContainer] = useState(false);
+  const [newContainerName, setNewContainerName] = useState('');
+  const [newContainerSize, setNewContainerSize] = useState('');
   const [confirmDelContainer, setConfirmDelContainer] = useState(null);
+  const [expandedContainer, setExpandedContainer] = useState(null);
 
   const visible = products.filter(p => showHidden ? p.hidden : !p.hidden);
   const filtered = visible.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
@@ -869,41 +1234,74 @@ const StockModule = () => {
           {role==='admin'&&<button onClick={()=>setShowNewContainer(!showNewContainer)} className="flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700"><I d={IC.plus} size={14}/>Nuevo tipo</button>}
         </div>
         {showNewContainer&&role==='admin'&&(
-          <div className="flex gap-2 mb-3">
-            <input autoFocus placeholder="Ej: Sifones 1L" value={newContainerName} onChange={e=>setNewContainerName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newContainerName.trim()){setContainerStock(p=>[...p,{id:Date.now(),name:newContainerName.trim(),stock:0}]);setNewContainerName('');setShowNewContainer(false);}}} className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
-            <Btn v="primary" size="sm" onClick={()=>{if(!newContainerName.trim())return;setContainerStock(p=>[...p,{id:Date.now(),name:newContainerName.trim(),stock:0}]);setNewContainerName('');setShowNewContainer(false);}}>Agregar</Btn>
+          <div className="space-y-2 mb-3">
+            <div className="flex gap-2">
+              <input autoFocus placeholder="Nombre (ej: Bidón)" value={newContainerName} onChange={e=>setNewContainerName(e.target.value)} className="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+              <input placeholder="Medida (ej: 12L)" value={newContainerSize} onChange={e=>setNewContainerSize(e.target.value)} className="w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+            </div>
+            <div className="flex gap-2">
+              <Btn v="secondary" size="sm" onClick={()=>{setShowNewContainer(false);setNewContainerName('');setNewContainerSize('');}} className="flex-1">Cancelar</Btn>
+              <Btn v="primary" size="sm" onClick={()=>{if(!newContainerName.trim())return;setContainerStock(p=>[...p,{id:Date.now(),name:newContainerName.trim(),size:newContainerSize.trim(),stock:0,stockAdjust:0}]);setNewContainerName('');setNewContainerSize('');setShowNewContainer(false);}} className="flex-1">Agregar</Btn>
+            </div>
           </div>
         )}
         {containerStock.length===0?(
           <p className="text-xs text-gray-400 text-center py-3">{role==='admin'?'Creá tu primer tipo de envase':'Sin envases configurados'}</p>
         ):(
-          <div className="space-y-3">
+          <div className="space-y-1.5">
             {containerStock.map(ct=>{
-              const inStreet=clients.reduce((s,c)=>s+(c.containers?.[ct.id]||0),0);
+              const label=ct.size?`${ct.name} ${ct.size}`:ct.name;
+              const inStreetAuto=clients.reduce((s,c)=>s+(c.containers?.[ct.id]||0),0);
+              const adjust=ct.stockAdjust||0;
+              const inStreet=inStreetAuto+adjust;
               const total=ct.stock+inStreet;
               const pct=total>0?Math.round(ct.stock/total*100):0;
+              const isOpen=expandedContainer===ct.id;
               return(
-                <div key={ct.id}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{ct.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-amber-600">{inStreet} en calle</span>
+                <div key={ct.id} className={`rounded-xl border transition-all ${isOpen?'border-sky-200 dark:border-sky-800 bg-sky-50/30 dark:bg-sky-900/10':'border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700'}`}>
+                  {/* Compact summary row */}
+                  <div onClick={()=>setExpandedContainer(isOpen?null:ct.id)} className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${isOpen?'bg-sky-100 dark:bg-sky-900/30 text-sky-600':'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
+                      <I d={IC.box} size={14}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{label}</p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-[10px] text-emerald-600 font-medium">🏠 {ct.stock}</span>
+                        <span className="text-[10px] text-amber-600 font-medium">🚚 {inStreet}</span>
+                        <span className="text-[10px] text-gray-400 font-medium">= {total}</span>
+                        <div className="flex-1 h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden flex">
+                          <div className="h-full bg-emerald-400 rounded-l-full transition-all" style={{width:`${pct}%`}}/>
+                          <div className="h-full bg-amber-300 rounded-r-full transition-all" style={{width:`${100-pct}%`}}/>
+                        </div>
+                      </div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={`text-gray-400 transition-transform shrink-0 ${isOpen?'rotate-180':''}`}><path d="M6 9l6 6 6-6"/></svg>
+                  </div>
+                  {/* Expanded detail */}
+                  {isOpen&&<div className="px-3 pb-3 pt-1 border-t border-gray-100 dark:border-gray-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-emerald-600 font-medium">En depósito</span>
                       <div className="flex items-center gap-1">
                         {role==='admin'&&<button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:Math.max(0,x.stock-1)}:x))} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-bold text-gray-500 active:scale-90 transition">−</button>}
-                        {role==='admin'?<input type="number" inputMode="numeric" value={ct.stock} onChange={e=>{const v=Math.max(0,parseInt(e.target.value)||0);setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:v}:x));}} onFocus={e=>e.target.select()} className="w-12 h-7 text-center text-base font-bold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:border-sky-500 tabular-nums"/>:<span className="text-base font-bold tabular-nums text-gray-900 dark:text-gray-100 min-w-[2rem] text-center">{ct.stock}</span>}
-                        {role==='admin'&&<button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:x.stock+1}:x))} className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sm font-bold text-sky-600 active:scale-90 transition">+</button>}
+                        {role==='admin'?<input type="number" inputMode="numeric" value={ct.stock} onChange={e=>{const v=Math.max(0,parseInt(e.target.value)||0);setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:v}:x));}} onFocus={e=>e.target.select()} className="w-14 h-7 text-center text-sm font-bold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:border-sky-500 tabular-nums"/>:<span className="text-sm font-bold tabular-nums text-gray-900 dark:text-gray-100">{ct.stock}</span>}
+                        {role==='admin'&&<button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stock:x.stock+1}:x))} className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-sm font-bold text-emerald-600 active:scale-90 transition">+</button>}
                       </div>
-                      {role==='admin'&&<button onClick={()=>setConfirmDelContainer(ct.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><I d={IC.x} size={14}/></button>}
                     </div>
-                  </div>
-                  <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-1.5 overflow-hidden flex">
-                    <div className="h-full bg-emerald-400 rounded-l-full transition-all" style={{width:`${pct}%`}}/>
-                    <div className="h-full bg-amber-300 rounded-r-full transition-all" style={{width:`${100-pct}%`}}/>
-                  </div>
-                  <div className="flex justify-between mt-0.5">
-                    <span className="text-[10px] text-emerald-600">Depósito: {ct.stock}</span>
-                    <span className="text-[10px] text-gray-400">Total: {total}</span>
-                  </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-amber-600 font-medium">En calle (clientes)</span>
+                      <span className="text-sm font-bold tabular-nums text-amber-600">{inStreetAuto}</span>
+                    </div>
+                    {role==='admin'&&<div className="flex items-center justify-between">
+                      <span className="text-xs text-violet-600 font-medium">Ajuste manual</span>
+                      <div className="flex items-center gap-1">
+                        <button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stockAdjust:(x.stockAdjust||0)-1}:x))} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-sm font-bold text-gray-500 active:scale-90 transition">−</button>
+                        <input type="number" inputMode="numeric" value={adjust} onChange={e=>{const v=parseInt(e.target.value)||0;setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stockAdjust:v}:x));}} onFocus={e=>e.target.select()} className="w-14 h-7 text-center text-sm font-bold text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg focus:outline-none focus:border-violet-500 tabular-nums"/>
+                        <button onClick={()=>setContainerStock(p=>p.map(x=>x.id===ct.id?{...x,stockAdjust:(x.stockAdjust||0)+1}:x))} className="w-7 h-7 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-sm font-bold text-violet-600 active:scale-90 transition">+</button>
+                      </div>
+                    </div>}
+                    {role==='admin'&&<button onClick={()=>setConfirmDelContainer(ct.id)} className="w-full py-1.5 rounded-lg text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 transition mt-1">Eliminar tipo</button>}
+                  </div>}
                 </div>
               );
             })}
@@ -924,7 +1322,7 @@ const StockModule = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{p.name}</span>
-                  {p.returnable && <Badge variant="info">{p.containerType==='sifon'?'Sifón':p.containerType==='bidon'?'Bidón':'Ret.'}</Badge>}
+                  {p.returnable && <Badge variant="info">{(()=>{const ct=containerStock.find(c=>c.id===p.containerType);return ct?(ct.size?`${ct.name} ${ct.size}`:ct.name):'Retornable';})()}</Badge>}
                   {p.hidden && <Badge variant="default">Oculto</Badge>}
                   {!p.hidden && p.minStock > 0 && p.stock <= p.minStock * 0.5 && <Badge variant="danger">Crítico</Badge>}
                   {!p.hidden && p.minStock > 0 && p.stock > p.minStock * 0.5 && p.stock <= p.minStock && <Badge variant="warning">Bajo</Badge>}
@@ -962,42 +1360,104 @@ const StockModule = () => {
 };
 
 const StockMov = ({product, onBack}) => {
-  const {products, setProducts} = useApp();
+  const {products, setProducts, containerStock, setContainerStock} = useApp();
   const [type, setType] = useState('entrada');
   const [qty, setQty] = useState(0);
-  const save = () => {
+  const [showContainerWarn, setShowContainerWarn] = useState(false);
+
+  const ct = product.returnable && product.containerType ? containerStock.find(c => c.id === product.containerType) : null;
+  const ctLabel = ct ? (ct.size ? `${ct.name} ${ct.size}` : ct.name) : '';
+  const emptyAvailable = ct ? ct.stock : 0;
+
+  const doSave = (force) => {
     if (qty <= 0) return;
+    // For returnable entrada: check container availability
+    if (type === 'entrada' && ct && qty > emptyAvailable && !force) {
+      setShowContainerWarn(true);
+      return;
+    }
     setProducts(products.map(p => p.id === product.id ? {...p, stock: type === 'entrada' ? p.stock + qty : Math.max(0, p.stock - qty)} : p));
+    // Deduct from empty containers on entrada (filling them)
+    if (type === 'entrada' && ct) {
+      if (qty > emptyAvailable) {
+        // Auto-adjust: add the missing containers then set depot to 0
+        const missing = qty - emptyAvailable;
+        setContainerStock(prev => prev.map(x => x.id === ct.id ? {...x, stock: 0} : x));
+        // The missing ones are "new" containers added to the system
+      } else {
+        setContainerStock(prev => prev.map(x => x.id === ct.id ? {...x, stock: x.stock - qty} : x));
+      }
+    }
+    setShowContainerWarn(false);
     onBack();
   };
+
   return (
     <div className="space-y-4">
       <BackBtn onClick={onBack}/>
-      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{product.name}</h2>
-      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3">
-        <div className="flex justify-between text-sm mb-1"><span className="text-gray-500">Stock actual</span><span className="font-bold text-gray-900 dark:text-gray-100">{product.stock}</span></div>
-        {product.minStock > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Stock mínimo</span><span className="font-semibold text-amber-600">{product.minStock}</span></div>}
+      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Movimiento de stock</h2>
+      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center">
+        <p className="text-sm text-gray-500">{product.name}</p>
+        <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{product.stock}</p>
         <StockBar stock={product.stock} minStock={product.minStock || 0}/>
       </div>
+      {ct && <div className="bg-sky-50 dark:bg-sky-900/15 border border-sky-200 dark:border-sky-800 rounded-xl p-3 flex items-center justify-between">
+        <div><p className="text-xs font-semibold text-sky-700 dark:text-sky-400">Envase: {ctLabel}</p><p className="text-[10px] text-sky-600">Vacíos en depósito: {emptyAvailable}</p></div>
+        <I d={IC.box} size={16} className="text-sky-500"/>
+      </div>}
       <div className="flex gap-2">{['entrada','salida'].map(t => (
         <button key={t} onClick={() => setType(t)} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${type === t ? (t === 'entrada' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white') : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>
           {t === 'entrada' ? 'Entrada' : 'Salida'}
         </button>
       ))}</div>
       <div className="flex justify-center py-4"><Qty value={qty} onChange={setQty}/></div>
-      <Btn v={type === 'entrada' ? 'success' : 'danger'} onClick={save} className="w-full">Registrar {type}</Btn>
+      {type === 'entrada' && ct && qty > 0 && <p className="text-xs text-center text-gray-400">Se llenarán {qty} envases vacíos → quedarán {Math.max(0, emptyAvailable - qty)} vacíos</p>}
+      <Btn v={type === 'entrada' ? 'success' : 'danger'} onClick={() => doSave(false)} className="w-full">Registrar {type}</Btn>
+
+      <Modal open={showContainerWarn} onClose={() => setShowContainerWarn(false)} title="Envases insuficientes">
+        <div className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+            <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">Querés cargar {qty} unidades de {product.name} pero solo hay {emptyAvailable} envases vacíos de {ctLabel} en depósito.</p>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Si continuás, se agregarán <b>{qty - emptyAvailable}</b> envases nuevos al sistema automáticamente.</p>
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setShowContainerWarn(false)} className="flex-1">Cancelar</Btn>
+            <Btn v="primary" onClick={() => doSave(true)} className="flex-1">Continuar</Btn>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
 
 const NewProductForm = ({onBack}) => {
-  const {products, setProducts, containerStock} = useApp();
+  const {products, setProducts, containerStock, setContainerStock} = useApp();
   const [f, sF] = useState({name:'', price:'', stock:'', minStock:'', unit:'un', returnable:false, containerType:null});
-  const save = () => {
+  const [showWarn, setShowWarn] = useState(false);
+
+  const ct = f.returnable && f.containerType ? containerStock.find(c => c.id === f.containerType) : null;
+  const ctLabel = ct ? (ct.size ? `${ct.name} ${ct.size}` : ct.name) : '';
+  const stockNum = Number(f.stock) || 0;
+  const emptyAvailable = ct ? ct.stock : 0;
+  const needsMore = f.returnable && ct && stockNum > emptyAvailable;
+
+  const doSave = (force) => {
     if (!f.name) return;
-    setProducts([...products, {id: Date.now(), ...f, price: Number(f.price) || 0, stock: Number(f.stock) || 0, minStock: Number(f.minStock) || 0, hidden: false}]);
+    if (needsMore && !force) { setShowWarn(true); return; }
+    setProducts([...products, {id: Date.now(), ...f, price: Number(f.price) || 0, stock: stockNum, minStock: Number(f.minStock) || 0, hidden: false}]);
+    // Deduct/adjust container stock
+    if (f.returnable && ct && stockNum > 0) {
+      if (stockNum > emptyAvailable) {
+        // Auto-add missing containers, set depot to 0
+        setContainerStock(prev => prev.map(x => x.id === ct.id ? {...x, stock: 0} : x));
+      } else {
+        setContainerStock(prev => prev.map(x => x.id === ct.id ? {...x, stock: x.stock - stockNum} : x));
+      }
+    }
+    setShowWarn(false);
     onBack();
   };
+
   const inputClass = "w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30";
   return (
     <div className="space-y-4">
@@ -1022,14 +1482,34 @@ const NewProductForm = ({onBack}) => {
             <label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block font-medium">Tipo de envase</label>
             {containerStock.length===0?<p className="text-xs text-gray-400 italic">Primero creá tipos de envases en Stock</p>:
             <div className="flex flex-wrap gap-2">
-              {containerStock.map(ct=>(
-                <button key={ct.id} type="button" onClick={()=>sF({...f,containerType:f.containerType===ct.id?null:ct.id})} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${f.containerType===ct.id?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>{ct.name}</button>
+              {containerStock.map(c=>(
+                <button key={c.id} type="button" onClick={()=>sF({...f,containerType:f.containerType===c.id?null:c.id})} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${f.containerType===c.id?'bg-sky-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>{c.size?`${c.name} ${c.size}`:c.name}</button>
               ))}
             </div>}
           </div>
         )}
+        {ct && <div className="bg-sky-50 dark:bg-sky-900/15 border border-sky-200 dark:border-sky-800 rounded-xl p-3">
+          <p className="text-xs text-sky-700 dark:text-sky-400 font-semibold">Envase: {ctLabel} — Vacíos en depósito: {emptyAvailable}</p>
+          {stockNum > 0 && <p className="text-[10px] text-sky-600 mt-0.5">Se llenarán {Math.min(stockNum, emptyAvailable)} envases vacíos</p>}
+        </div>}
+        {needsMore && <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">⚠️ Stock ({stockNum}) excede envases vacíos ({emptyAvailable}). Se agregarán {stockNum - emptyAvailable} envases nuevos al guardar.</p>
+        </div>}
       </div>
-      <Btn v="primary" onClick={save} className="w-full">Guardar producto</Btn>
+      <Btn v="primary" onClick={() => doSave(false)} disabled={!f.name || (f.returnable && !f.containerType)} className="w-full">Guardar producto</Btn>
+
+      <Modal open={showWarn} onClose={() => setShowWarn(false)} title="Envases insuficientes">
+        <div className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+            <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">Querés crear {stockNum} unidades de {f.name} pero solo hay {emptyAvailable} envases vacíos de {ctLabel}.</p>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Se agregarán <b>{stockNum - emptyAvailable}</b> envases nuevos al sistema automáticamente.</p>
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setShowWarn(false)} className="flex-1">Cancelar</Btn>
+            <Btn v="primary" onClick={() => doSave(true)} className="flex-1">Continuar</Btn>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -1647,7 +2127,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function App({userEmail=''}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
 
   // Cargar datos desde Supabase al iniciar
@@ -1657,17 +2137,18 @@ export default function App({userEmail=''}){
       if(!user)return;
       const{data}=await supabase.from('user_data').select('*').eq('user_id',user.id).single();
       if(data){
-        if(data.clients?.length) setClients(data.clients);
-        if(data.products?.length) setProducts(data.products);
-        if(data.orders?.length) setOrders(data.orders);
-        if(data.plans?.length) setPlans(data.plans);
-        if(data.client_plans?.length) setClientPlans(data.client_plans);
-        if(data.pending_routes?.length) setPendingRoutes(data.pending_routes);
-        if(data.past_routes?.length) setPastRoutes(data.past_routes);
+        if(Array.isArray(data.clients)) setClients(data.clients);
+        if(Array.isArray(data.products)) setProducts(data.products);
+        if(Array.isArray(data.orders)) setOrders(data.orders);
+        if(Array.isArray(data.plans)) setPlans(data.plans);
+        if(Array.isArray(data.client_plans)) setClientPlans(data.client_plans);
+        if(Array.isArray(data.pending_routes)) setPendingRoutes(data.pending_routes);
+        if(Array.isArray(data.past_routes)) setPastRoutes(data.past_routes);
         if(data.order_counter) setOrderCounter(data.order_counter);
         if(data.route_counter) setRouteCounter(data.route_counter);
-        if(data.payments?.length) setPayments(data.payments);
-        if(data.container_stock&&Array.isArray(data.container_stock)) setContainerStock(data.container_stock);
+        if(Array.isArray(data.payments)) setPayments(data.payments);
+        if(Array.isArray(data.container_stock)) setContainerStock(data.container_stock);
+        if(Array.isArray(data.bottle_swaps)) setBottleSwaps(data.bottle_swaps);
       }
       setDbLoaded(true);
     };
@@ -1682,7 +2163,7 @@ export default function App({userEmail=''}){
       if(!user)return;
       await supabase.from('user_data').upsert({
         user_id:user.id,
-        clients,products,orders,plans,payments,container_stock:containerStock,
+        clients,products,orders,plans,payments,container_stock:containerStock,bottle_swaps:bottleSwaps,
         client_plans:clientPlans,
         pending_routes:pendingRoutes,
         past_routes:pastRoutes,
@@ -1692,8 +2173,8 @@ export default function App({userEmail=''}){
       });
     },1000);
     return()=>clearTimeout(timer);
-  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock]);
-  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock]);
+  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps]);
+  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock,bottleSwaps]);
   const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
     <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><button onClick={()=>setShowRP(!showRP)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'} ▾</button><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div>{showRP&&<div className="max-w-lg mx-auto px-4 pb-2"><div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">{[['admin','Admin'],['repartidor','Repartidor'],['operador','Operador']].map(([r,l])=>(<button key={r} onClick={()=>{setRole(r);setShowRP(false);setView('home');}} className={`flex-1 py-2 rounded-lg text-xs font-semibold transition ${role===r?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500'}`}>{l}</button>))}</div></div>}</header>
