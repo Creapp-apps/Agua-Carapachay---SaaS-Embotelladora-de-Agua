@@ -2127,7 +2127,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function App({userEmail=''}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState(INITIAL_CLIENTS);const[products,setProducts]=useState(INITIAL_PRODUCTS);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
 
   // Cargar datos desde Supabase al iniciar
@@ -2137,25 +2137,30 @@ export default function App({userEmail=''}){
       if(!user)return;
       const{data}=await supabase.from('user_data').select('*').eq('user_id',user.id).single();
       if(data){
-        if(Array.isArray(data.clients)) setClients(data.clients);
-        if(Array.isArray(data.products)) setProducts(data.products);
-        if(Array.isArray(data.orders)) setOrders(data.orders);
-        if(Array.isArray(data.plans)) setPlans(data.plans);
-        if(Array.isArray(data.client_plans)) setClientPlans(data.client_plans);
-        if(Array.isArray(data.pending_routes)) setPendingRoutes(data.pending_routes);
-        if(Array.isArray(data.past_routes)) setPastRoutes(data.past_routes);
+        // Cargar datos guardados (arrays vacíos son válidos)
+        setClients(Array.isArray(data.clients)?data.clients:[]);
+        setProducts(Array.isArray(data.products)?data.products:[]);
+        setOrders(Array.isArray(data.orders)?data.orders:[]);
+        setPlans(Array.isArray(data.plans)?data.plans:[]);
+        setClientPlans(Array.isArray(data.client_plans)?data.client_plans:[]);
+        setPendingRoutes(Array.isArray(data.pending_routes)?data.pending_routes:[]);
+        setPastRoutes(Array.isArray(data.past_routes)?data.past_routes:[]);
         if(data.order_counter) setOrderCounter(data.order_counter);
         if(data.route_counter) setRouteCounter(data.route_counter);
-        if(Array.isArray(data.payments)) setPayments(data.payments);
-        if(Array.isArray(data.container_stock)) setContainerStock(data.container_stock);
-        if(Array.isArray(data.bottle_swaps)) setBottleSwaps(data.bottle_swaps);
+        setPayments(Array.isArray(data.payments)?data.payments:[]);
+        setContainerStock(Array.isArray(data.container_stock)?data.container_stock:[]);
+        setBottleSwaps(Array.isArray(data.bottle_swaps)?data.bottle_swaps:[]);
+      } else {
+        // Primer uso: cargar datos iniciales de ejemplo
+        setClients(INITIAL_CLIENTS);
+        setProducts(INITIAL_PRODUCTS);
       }
       setDbLoaded(true);
     };
     load();
   },[]);
 
-  // Guardar en Supabase cuando cambia algo (con debounce de 1s)
+  // Guardar en Supabase cuando cambia algo (debounce 500ms)
   useEffect(()=>{
     if(!dbLoaded)return;
     const timer=setTimeout(async()=>{
@@ -2171,7 +2176,7 @@ export default function App({userEmail=''}){
         route_counter:routeCounter,
         updated_at:new Date().toISOString(),
       });
-    },1000);
+    },500);
     return()=>clearTimeout(timer);
   },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps]);
   const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock,bottleSwaps]);
