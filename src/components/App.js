@@ -329,24 +329,31 @@ const ClientDetail = ({client,onBack}) => {
   const clientSwaps = (bottleSwaps||[]).filter(s=>s.clientId===client.id).sort((a,b)=>b.createdAt-a.createdAt);
   const cur = clients.find(c=>c.id===client.id)||client;
   const createOrder = (orderItems,note,payment) => {
-    const total=orderItems.reduce((s,it)=>s+it.price*it.qty,0);
+    // Fiado directo: payment contains fiadoDirecto flag and custom total
+    const isFiadoDirecto = payment?.fiadoDirecto;
+    const total = isFiadoDirecto ? (payment.fiadoAmount || 0) : orderItems.reduce((s,it)=>s+it.price*it.qty,0);
     const orderNum=String(orderCounter).padStart(4,'0');
-    const order={id:Date.now(),orderNum,clientId:client.id,clientName:client.name,items:orderItems,total,note,payment:payment||{},status:'pendiente',createdAt:Date.now()};
+    const order={id:Date.now(),orderNum,clientId:client.id,clientName:client.name,items:isFiadoDirecto?[{name:payment.fiadoConcept||'Fiado directo',qty:1,price:total,unit:'un',productId:null}]:orderItems,total,note,payment:{method:'fiado',amount:0,...(payment||{})},status:isFiadoDirecto?'entregado':'pendiente',createdAt:Date.now(),fiadoDirecto:!!isFiadoDirecto};
     setOrders(prev=>[order,...prev]);
     setOrderCounter(prev=>prev+1);
-    // Descontar stock de productos
-    setProducts(prev=>prev.map(p=>{const it=orderItems.find(x=>x.productId===p.id);return it?{...p,stock:Math.max(0,p.stock-it.qty)}:p;}));
-    // Descontar envases del depósito y sumar al cliente
-    const outByContainer={};
-    orderItems.forEach(it=>{const p=products.find(x=>x.id===it.productId);if(p?.returnable&&p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
-    if(Object.keys(outByContainer).length>0){
-      setContainerStock(prev=>prev.map(ct=>({...ct,stock:Math.max(0,ct.stock-(outByContainer[ct.id]||0))})));
-      setClients(prev=>prev.map(c=>{if(c.id!==client.id)return c;const nc={...(c.containers||{})};Object.entries(outByContainer).forEach(([id,qty])=>{nc[Number(id)]=(nc[Number(id)]||0)+qty;});return{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:total-(payment?.amount||0)>0?c.balance-(total-(payment?.amount||0)):c.balance,containers:nc};}));
+    if(!isFiadoDirecto){
+      // Descontar stock de productos
+      setProducts(prev=>prev.map(p=>{const it=orderItems.find(x=>x.productId===p.id);return it?{...p,stock:Math.max(0,p.stock-it.qty)}:p;}));
+      // Descontar envases del depósito y sumar al cliente
+      const outByContainer={};
+      orderItems.forEach(it=>{const p=products.find(x=>x.id===it.productId);if(p?.returnable&&p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
+      if(Object.keys(outByContainer).length>0){
+        setContainerStock(prev=>prev.map(ct=>({...ct,stock:Math.max(0,ct.stock-(outByContainer[ct.id]||0))})));
+        setClients(prev=>prev.map(c=>{if(c.id!==client.id)return c;const nc={...(c.containers||{})};Object.entries(outByContainer).forEach(([id,qty])=>{nc[Number(id)]=(nc[Number(id)]||0)+qty;});return{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:total-(payment?.amount||0)>0?c.balance-(total-(payment?.amount||0)):c.balance,containers:nc};}));
+      } else {
+        // Actualizar saldo si quedó deuda (sin envases)
+        const paid=payment?.amount||0;
+        const debt=total-paid;
+        setClients(prev=>prev.map(c=>c.id===client.id?{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:debt>0?c.balance-debt:c.balance}:c));
+      }
     } else {
-      // Actualizar saldo si quedó deuda (sin envases)
-      const paid=payment?.amount||0;
-      const debt=total-paid;
-      setClients(prev=>prev.map(c=>c.id===client.id?{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:debt>0?c.balance-debt:c.balance}:c));
+      // Fiado directo: solo sumar deuda, no tocar stock
+      setClients(prev=>prev.map(c=>c.id===client.id?{...c,lastOrder:new Date().toLocaleDateString('es-AR'),balance:c.balance-total}:c));
     }
     setShowNewOrder(false);
   };
@@ -662,9 +669,9 @@ const ClientDetail = ({client,onBack}) => {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">#{o.orderNum}</span>
                 {cur.type==='empresa'&&<button onClick={e=>{e.stopPropagation();printRemito(o);}} className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-sky-100 dark:hover:bg-sky-900/30 hover:text-sky-600 transition text-[10px] font-semibold"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Remito</button>}
-                <Badge variant={o.status==='entregado'?'success':'warning'}>{o.status==='entregado'?'Entregado':'Pendiente'}</Badge>{o.payment?.method==='fiado'&&!o.paidAt&&<Badge variant="danger">Fiado</Badge>}{o.paidAt&&<Badge variant="success">Pagado</Badge>}
+                <Badge variant={o.status==='entregado'?'success':'warning'}>{o.status==='entregado'?'Entregado':'Pendiente'}</Badge>{o.fiadoDirecto&&<Badge variant="danger">Fiado directo</Badge>}{o.payment?.method==='fiado'&&!o.paidAt&&!o.fiadoDirecto&&<Badge variant="danger">Fiado</Badge>}{o.paidAt&&<Badge variant="success">Pagado</Badge>}
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">{new Date(o.createdAt).toLocaleDateString('es-AR')} - {o.items.length} producto{o.items.length!==1?'s':''}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{new Date(o.createdAt).toLocaleDateString('es-AR')} - {o.fiadoDirecto?(o.items[0]?.name||'Fiado directo'):`${o.items.length} producto${o.items.length!==1?'s':''}`}</p>
             </div>
             <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(o.total)}</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={'text-gray-400 transition-transform '+(isOpen?'rotate-180':'')}><path d="M6 9l6 6 6-6"/></svg>
@@ -749,11 +756,20 @@ const NewOrderForm = ({client,onBack,onSave}) => {
   const [pm,setPm]=useState(null);
   const [pa,setPa]=useState('');
   const [receipt,setReceipt]=useState(null);
+  const [fiadoDirecto,setFiadoDirecto]=useState(false);
+  const [fiadoAmount,setFiadoAmount]=useState('');
+  const [fiadoConcept,setFiadoConcept]=useState('Fiado pendiente');
   const total=items.reduce((s,it)=>s+it.price*it.qty,0);
   const hasItems=items.some(it=>it.qty>0);
   const fileRef=useRef(null);
 
   const handleConfirm=()=>{
+    if(fiadoDirecto){
+      const amt=Number(fiadoAmount);
+      if(!amt||amt<=0)return;
+      onSave([],note,{method:'fiado',amount:0,fiadoDirecto:true,fiadoAmount:amt,fiadoConcept:fiadoConcept.trim()||'Fiado pendiente'});
+      return;
+    }
     const paid=pm==='fiado'?0:(Number(pa)||total);
     onSave(
       items.filter(it=>it.qty>0).map(it=>({productId:it.id,name:it.name,qty:it.qty,price:it.price,unit:it.unit})),
@@ -765,56 +781,93 @@ const NewOrderForm = ({client,onBack,onSave}) => {
   return(<div className="space-y-4"><BackBtn onClick={onBack}/>
     <div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center"><I d={IC.file} size={22} className="text-sky-600"/></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Nuevo pedido</h3><p className="text-xs text-gray-500">{client.name}</p></div></div>
 
-    {/* Step bar */}
-    <div className="flex gap-1">{['Productos','Cobro'].map((l,i)=>(<div key={i} className={'flex-1 h-1.5 rounded-full transition-all '+(step>=i?'bg-sky-600':'bg-gray-200 dark:bg-gray-700')}/>))}</div>
+    {/* Toggle: Pedido normal vs Fiado directo */}
+    <div className="flex rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden">
+      <button onClick={()=>{setFiadoDirecto(false);}} className={`flex-1 py-2.5 text-sm font-semibold transition-all ${!fiadoDirecto?'bg-sky-600 text-white':'bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Con productos</button>
+      <button onClick={()=>{setFiadoDirecto(true);setStep(0);}} className={`flex-1 py-2.5 text-sm font-semibold transition-all ${fiadoDirecto?'bg-red-500 text-white':'bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>Cargar fiado</button>
+    </div>
 
-    {step===0&&(<>
-      {products.filter(p=>p.price>0).length===0?<div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-center"><p className="text-sm text-amber-700 font-semibold">No hay productos</p></div>:
-      <div className="space-y-2">{items.filter(it=>it.price>0).map(it=>(<Card key={it.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p><p className="text-xs text-gray-400">{fmt(it.price)} / {it.unit}</p></div><Qty value={it.qty} onChange={v=>setItems(p=>p.map(x=>x.id===it.id?{...x,qty:v}:x))}/></div></Card>))}</div>}
+    {/* ===== FIADO DIRECTO MODE ===== */}
+    {fiadoDirecto&&(<>
+      <div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-4 space-y-1">
+        <div className="flex items-center gap-2 mb-1"><I d={IC.alert} size={16} className="text-red-500 shrink-0"/><p className="text-sm font-bold text-red-700 dark:text-red-400">Fiado sin productos</p></div>
+        <p className="text-xs text-red-600/80 dark:text-red-400/80">Se carga un monto adeudado por el cliente sin descontar stock de ningún producto.</p>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Concepto</label>
+        <input value={fiadoConcept} onChange={e=>setFiadoConcept(e.target.value)} placeholder="Ej: Deuda anterior, Fiado semanal..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30"/>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">Monto fiado</label>
+        <input type="number" inputMode="numeric" value={fiadoAmount} onChange={e=>setFiadoAmount(e.target.value)} placeholder="$0" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500/30"/>
+      </div>
+
       <input placeholder="Nota (opcional)" value={note} onChange={e=>setNote(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
-      {hasItems&&<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>}
-      <Btn v="primary" onClick={()=>{setStep(1);setPa(String(total));}} disabled={!hasItems} className="w-full" size="lg">Siguiente: Cobro</Btn>
+
+      {Number(fiadoAmount)>0&&<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center">
+        <span className="text-xs text-gray-400">Se suma a la deuda</span>
+        <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{fmt(Number(fiadoAmount))}</p>
+        {client.balance<0&&<p className="text-xs text-gray-400 mt-1">Deuda actual: {fmt(client.balance)} → Nueva: {fmt(client.balance-Number(fiadoAmount))}</p>}
+      </div>}
+
+      <Btn v="danger" onClick={handleConfirm} disabled={!fiadoAmount||Number(fiadoAmount)<=0} className="w-full" size="lg"><I d={IC.check} size={18}/>Confirmar fiado</Btn>
     </>)}
 
-    {step===1&&(<>
-      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total a cobrar</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>
+    {/* ===== NORMAL ORDER MODE ===== */}
+    {!fiadoDirecto&&(<>
+      {/* Step bar */}
+      <div className="flex gap-1">{['Productos','Cobro'].map((l,i)=>(<div key={i} className={'flex-1 h-1.5 rounded-full transition-all '+(step>=i?'bg-sky-600':'bg-gray-200 dark:bg-gray-700')}/>))}</div>
 
-      {/* Payment methods */}
-      <div className="grid grid-cols-2 gap-2">
-        {[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(
-          <button key={k} onClick={()=>{setPm(k);setPa(k==='fiado'?'0':String(total));}} className={'py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 '+(pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400')}>{l}</button>
-        ))}
-      </div>
+      {step===0&&(<>
+        {products.filter(p=>p.price>0).length===0?<div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-center"><p className="text-sm text-amber-700 font-semibold">No hay productos</p></div>:
+        <div className="space-y-2">{items.filter(it=>it.price>0).map(it=>(<Card key={it.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p><p className="text-xs text-gray-400">{fmt(it.price)} / {it.unit}</p></div><Qty value={it.qty} onChange={v=>setItems(p=>p.map(x=>x.id===it.id?{...x,qty:v}:x))}/></div></Card>))}</div>}
+        <input placeholder="Nota (opcional)" value={note} onChange={e=>setNote(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+        {hasItems&&<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>}
+        <Btn v="primary" onClick={()=>{setStep(1);setPa(String(total));}} disabled={!hasItems} className="w-full" size="lg">Siguiente: Cobro</Btn>
+      </>)}
 
-      {/* Amount input for non-fiado */}
-      {pm&&pm!=='fiado'&&pm!=='mercadopago'&&(<div>
-        <label className="text-xs text-gray-500 dark:text-gray-400">Monto cobrado</label>
-        <input type="number" inputMode="numeric" value={pa} onChange={e=>setPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
-        {Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia de {fmt(total-Number(pa))} queda como fiado</p>}
-      </div>)}
+      {step===1&&(<>
+        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total a cobrar</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>
 
-      {/* Transfer - attach receipt */}
-      {pm==='transferencia'&&(<div className="space-y-2">
-        <input type="file" ref={fileRef} accept="image/*,.pdf" onChange={e=>setReceipt(e.target.files[0]||null)} className="hidden"/>
-        <Btn v="outline" onClick={()=>fileRef.current?.click()} className="w-full"><I d={IC.camera} size={16}/>{receipt?receipt.name:'Adjuntar comprobante'}</Btn>
-        {receipt&&<div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-2.5"><I d={IC.check} size={16} className="text-emerald-600 shrink-0"/><span className="text-xs text-emerald-700 dark:text-emerald-400 truncate flex-1">{receipt.name}</span><button onClick={()=>setReceipt(null)} className="text-gray-400 hover:text-red-500"><I d={IC.x} size={14}/></button></div>}
-      </div>)}
+        {/* Payment methods */}
+        <div className="grid grid-cols-2 gap-2">
+          {[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(
+            <button key={k} onClick={()=>{setPm(k);setPa(k==='fiado'?'0':String(total));}} className={'py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 '+(pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400')}>{l}</button>
+          ))}
+        </div>
 
-      {/* Mercado Pago */}
-      {pm==='mercadopago'&&(<div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-4 text-center space-y-3">
-        <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-800 flex items-center justify-center mx-auto"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg></div>
-        <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Mercado Pago</p>
-        <p className="text-xs text-sky-600 dark:text-sky-500">Se generara un link de pago por {fmt(total)}</p>
-        <p className="text-[10px] text-gray-400">Proximamente: integracion con API de Mercado Pago para cobro con QR y link automatico</p>
-      </div>)}
+        {/* Amount input for non-fiado */}
+        {pm&&pm!=='fiado'&&pm!=='mercadopago'&&(<div>
+          <label className="text-xs text-gray-500 dark:text-gray-400">Monto cobrado</label>
+          <input type="number" inputMode="numeric" value={pa} onChange={e=>setPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
+          {Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia de {fmt(total-Number(pa))} queda como fiado</p>}
+        </div>)}
 
-      {/* Fiado warning */}
-      {pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 dark:text-red-400 font-semibold">{fmt(total)} se suma a la deuda del cliente</p></div>}
+        {/* Transfer - attach receipt */}
+        {pm==='transferencia'&&(<div className="space-y-2">
+          <input type="file" ref={fileRef} accept="image/*,.pdf" onChange={e=>setReceipt(e.target.files[0]||null)} className="hidden"/>
+          <Btn v="outline" onClick={()=>fileRef.current?.click()} className="w-full"><I d={IC.camera} size={16}/>{receipt?receipt.name:'Adjuntar comprobante'}</Btn>
+          {receipt&&<div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-2.5"><I d={IC.check} size={16} className="text-emerald-600 shrink-0"/><span className="text-xs text-emerald-700 dark:text-emerald-400 truncate flex-1">{receipt.name}</span><button onClick={()=>setReceipt(null)} className="text-gray-400 hover:text-red-500"><I d={IC.x} size={14}/></button></div>}
+        </div>)}
 
-      <div className="flex gap-2">
-        <Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atras</Btn>
-        <Btn v="success" onClick={handleConfirm} disabled={!pm} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn>
-      </div>
+        {/* Mercado Pago */}
+        {pm==='mercadopago'&&(<div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-4 text-center space-y-3">
+          <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-800 flex items-center justify-center mx-auto"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg></div>
+          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Mercado Pago</p>
+          <p className="text-xs text-sky-600 dark:text-sky-500">Se generara un link de pago por {fmt(total)}</p>
+          <p className="text-[10px] text-gray-400">Proximamente: integracion con API de Mercado Pago para cobro con QR y link automatico</p>
+        </div>)}
+
+        {/* Fiado warning */}
+        {pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 dark:text-red-400 font-semibold">{fmt(total)} se suma a la deuda del cliente</p></div>}
+
+        <div className="flex gap-2">
+          <Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atras</Btn>
+          <Btn v="success" onClick={handleConfirm} disabled={!pm} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn>
+        </div>
+      </>)}
     </>)}
   </div>);
 };
