@@ -28,9 +28,18 @@ export default function Home() {
   useEffect(() => {
     if (session?.user?.id) {
       supabase.from('profiles').select('*').eq('id', session.user.id).single()
-        .then(({ data }) => {
-          if (data) setProfile(data);
-          else setProfile({ role: 'admin', tenant_id: null }); // Fallback si no hay perfil
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("DEBUG: Error reading from profiles table (likely RLS):", error);
+            alert("Error leyendo tu perfil de usuario. Verificá consola.");
+          }
+          if (data) {
+            console.log("DEBUG: Profile loaded correctly:", data);
+            setProfile(data);
+          } else {
+            console.warn("DEBUG: No profile data found for this user in table profiles. Falling back to simple admin.");
+            setProfile({ role: 'admin', tenant_id: null }); // Fallback si no hay perfil
+          }
         });
     } else {
       setProfile(null);
