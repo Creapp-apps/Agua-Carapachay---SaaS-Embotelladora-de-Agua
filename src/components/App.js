@@ -2178,17 +2178,16 @@ const VIEWS={home:HomeView,clientes:ClientsModule,stock:StockModule,planes:Plans
 
 import { supabase } from '@/lib/supabase';
 
-export default function App({userEmail=''}){
+export default function App({userEmail='', profile}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState('admin');const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState(profile?.role || 'admin');const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
 
   // Cargar datos desde Supabase al iniciar
   useEffect(()=>{
     const load=async()=>{
-      const{data:{user}}=await supabase.auth.getUser();
-      if(!user)return;
-      const{data}=await supabase.from('user_data').select('*').eq('user_id',user.id).single();
+      if(!profile?.tenant_id) return;
+      const{data}=await supabase.from('user_data').select('*').eq('tenant_id', profile.tenant_id).single();
       if(data){
         // Cargar datos guardados (arrays vacíos son válidos)
         setClients(Array.isArray(data.clients)?data.clients:[]);
@@ -2211,18 +2210,24 @@ export default function App({userEmail=''}){
       setDbLoaded(true);
     };
     load();
-  },[]);
+  },[profile]);
 
   // Guardar en Supabase cuando cambia algo (debounce 500ms)
   const[saveStatus,setSaveStatus]=useState('');
   useEffect(()=>{
-    if(!dbLoaded)return;
+    if(!dbLoaded || !profile?.tenant_id)return;
     const timer=setTimeout(async()=>{
       try{
         const{data:{user}}=await supabase.auth.getUser();
         if(!user){setSaveStatus('❌ Sin usuario');return;}
+        
+        // Verificamos si la fila existe (por si es el primer guardado del tenant)
+        const check = await supabase.from('user_data').select('user_id').eq('tenant_id', profile.tenant_id).single();
+        const saveId = check.data ? check.data.user_id : user.id;
+
         const payload={
-          user_id:user.id,
+          user_id:saveId, // Mantenemos el user_id original (dueño) de esa fila
+          tenant_id:profile.tenant_id,
           clients,products,orders,plans,payments,container_stock:containerStock,bottle_swaps:bottleSwaps,
           client_plans:clientPlans,
           pending_routes:pendingRoutes,
