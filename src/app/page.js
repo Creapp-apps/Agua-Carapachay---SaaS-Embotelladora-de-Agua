@@ -9,7 +9,6 @@ import LoginScreen from '@/components/LoginScreen';
 
 const App = nextDynamic(() => import('@/components/App'), { ssr: false });
 const SuperAdminApp = nextDynamic(() => import('@/components/super-admin/SuperAdminApp'), { ssr: false });
-const RepartidorView = nextDynamic(() => import('@/components/repartidor/RepartidorView'), { ssr: false });
 
 export default function Home() {
   const [session, setSession] = useState(undefined);
@@ -38,7 +37,7 @@ export default function Home() {
             setProfile(data);
           } else {
             console.warn("DEBUG: No profile data found for this user in table profiles. Falling back to simple admin.");
-            setProfile({ role: 'admin', tenant_id: null }); // Fallback si no hay perfil
+            setProfile({ role: 'admin', tenant_id: null });
           }
         });
     } else {
@@ -56,14 +55,11 @@ export default function Home() {
 
   if (!session) return <LoginScreen />;
 
-  // Seleccionar vista según el rol
+  // Super Admin tiene su propia vista
   if (profile.role === 'super_admin') {
     return <SuperAdminApp session={session} profile={profile} />;
   }
-  
-  if (profile.role === 'repartidor') {
-    return <RepartidorView session={session} profile={profile} />;
-  }
 
+  // Todos los demás roles (admin, operador, repartidor) usan la app principal
   return <App userEmail={session.user.email} profile={profile} />;
 }

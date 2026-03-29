@@ -2,6 +2,17 @@
 
 import { useState, useEffect, useRef, useMemo, createContext, useContext, useCallback } from 'react';
 
+const getDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // en km
+};
+
 const AppContext = createContext();
 const useApp = () => useContext(AppContext);
 
@@ -77,6 +88,10 @@ const IC = {
   userPlus:'M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M8.5 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6',box:'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z',
   route:'M3 17l4-4 4 4 4-4 4 4M3 7l4-4 4 4 4-4 4 4',play:'M5 3l14 9-14 9V3z',nav:'M3 11l19-9-9 19-2-8-8-2z',loader:'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83',
   file:'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6',clock:'M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2',money:'M12 1v22M17 5H9.5a3.5 3.5 0 100 7h5a3.5 3.5 0 110 7H6',
+  settings:'M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2zM12 15a3 3 0 100-6 3 3 0 000 6z',
+  trash:'M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2',
+  edit:'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z',
+  save:'M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8',
 };
 
 // --- Utilities ---
@@ -104,9 +119,9 @@ const StepBar = ({steps,current})=>(<div className="flex items-center gap-1.5 mb
 const Modal = ({open,onClose,title,children})=>{if(!open)return null;return(<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={e=>{e.stopPropagation();onClose();}} onTouchEnd={e=>e.stopPropagation()}><div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/><div onClick={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} className="relative w-full max-w-lg max-h-[90vh] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 shrink-0"><h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"><I d={IC.x} size={20}/></button></div><div className="overflow-y-auto flex-1 p-4">{children}</div></div></div>);};
 
 // --- Map ---
-const RouteMap = ({stops=[],height=260,showRoute=true})=>{const mapRef=useRef(null);const mapInst=useRef(null);const markers=useRef([]);const poly=useRef(null);const[loaded,setLoaded]=useState(false);
+const RouteMap = ({stops=[],depot=null,height=260,showRoute=true})=>{const mapRef=useRef(null);const mapInst=useRef(null);const markers=useRef([]);const poly=useRef(null);const[loaded,setLoaded]=useState(false);
   useEffect(()=>{if(typeof window==='undefined')return;if(window.L){setLoaded(true);return;}const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(css);const js=document.createElement('script');js.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';js.onload=()=>setLoaded(true);document.head.appendChild(js);},[]);
-  useEffect(()=>{if(!loaded||!mapRef.current||!window.L)return;const L=window.L;if(!mapInst.current){mapInst.current=L.map(mapRef.current,{zoomControl:false,attributionControl:false}).setView([-34.6037,-58.3816],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapInst.current);L.control.zoom({position:'bottomright'}).addTo(mapInst.current);}const map=mapInst.current;markers.current.forEach(m=>map.removeLayer(m));markers.current=[];if(poly.current){map.removeLayer(poly.current);poly.current=null;}if(!stops?.length)return;const vs=stops.filter(s=>s.lat&&s.lng);const bounds=[];vs.forEach((s,i)=>{const done=s.status==='entregado';const icon=L.divIcon({className:'',html:`<div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;background:${done?'#059669':'#0284c7'};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-family:system-ui;">${i+1}</div>`,iconSize:[32,32],iconAnchor:[16,16]});const m=L.marker([s.lat,s.lng],{icon}).addTo(map);m.bindPopup(`<b>${s.clientName||s.name}</b><br/><small>${s.address}</small>`);markers.current.push(m);bounds.push([s.lat,s.lng]);});if(showRoute&&bounds.length>1){poly.current=L.polyline(bounds,{color:'#0284c7',weight:3,opacity:0.7,dashArray:'8 6'}).addTo(map);}if(bounds.length>0)map.fitBounds(bounds,{padding:[40,40],maxZoom:15});setTimeout(()=>map.invalidateSize(),100);},[loaded,stops,showRoute]);
+  useEffect(()=>{if(!loaded||!mapRef.current||!window.L)return;const L=window.L;if(!mapInst.current){mapInst.current=L.map(mapRef.current,{zoomControl:false,attributionControl:false}).setView([-34.6037,-58.3816],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapInst.current);L.control.zoom({position:'bottomright'}).addTo(mapInst.current);}const map=mapInst.current;markers.current.forEach(m=>map.removeLayer(m));markers.current=[];if(poly.current){map.removeLayer(poly.current);poly.current=null;}const bounds=[];if(depot&&depot.lat&&depot.lng){const dIcon=L.divIcon({className:'',html:`<div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;background:#4f46e5;border:3px solid white;box-shadow:0 3px 10px rgba(0,0,0,0.3);">🏭</div>`,iconSize:[36,36],iconAnchor:[18,18]});const dm=L.marker([depot.lat,depot.lng],{icon:dIcon,zIndexOffset:1000}).addTo(map);dm.bindPopup(`<b>Punto de Partida</b><br/><small>${depot.address||'Central'}</small>`);markers.current.push(dm);bounds.push([depot.lat,depot.lng]);}if(stops&&stops.length>0){const vs=stops.filter(s=>s.lat&&s.lng);vs.forEach((s,i)=>{const done=s.status==='entregado';const icon=L.divIcon({className:'',html:`<div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:white;background:${done?'#059669':'#0284c7'};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-family:system-ui;">${i+1}</div>`,iconSize:[32,32],iconAnchor:[16,16]});const m=L.marker([s.lat,s.lng],{icon}).addTo(map);m.bindPopup(`<b>${s.clientName||s.name}</b><br/><small>${s.address}</small>`);markers.current.push(m);bounds.push([s.lat,s.lng]);});if(showRoute&&bounds.length>1){poly.current=L.polyline(bounds,{color:'#0284c7',weight:3,opacity:0.7,dashArray:'8 6'}).addTo(map);}}if(bounds.length>0){map.fitBounds(bounds,{padding:[40,40],maxZoom:15});}setTimeout(()=>map.invalidateSize(),100);},[loaded,stops,depot,showRoute]);
   useEffect(()=>()=>{if(mapInst.current){mapInst.current.remove();mapInst.current=null;}},[]);
   return(<div className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 relative" style={{height}}><div ref={mapRef} style={{width:'100%',height:'100%'}}/>{!loaded&&<div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800"><p className="text-xs text-gray-400 animate-pulse">Cargando mapa...</p></div>}</div>);
 };
@@ -1723,7 +1738,7 @@ const AssignPlanForm = ({client,onBack}) => {
    DETALLE DE REPARTO ANTERIOR
    ============================================================ */
 const PastRouteDetail = ({route:r,onBack})=>{
-  const{products,containerStock}=useApp();
+  const{products,containerStock,role,setPastRoutes}=useApp();
 
   // Carga que salió
   const truckItems=Object.entries(r.truckStock||{}).filter(([,q])=>q>0).map(([id,q])=>({id:Number(id),qty:q,product:products.find(p=>p.id===Number(id))}));
@@ -1825,6 +1840,7 @@ const PastRouteDetail = ({route:r,onBack})=>{
       </div>
       <div className="flex items-center gap-2">
         <button onClick={printRoute} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-xs font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 transition active:scale-95"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Imprimir</button>
+        {role==='admin'&&<button onClick={()=>{if(window.confirm('¿Seguro que querés eliminar este historial?')){setPastRoutes(p=>p.filter(x=>x.id!==r.id));onBack();}}} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 font-semibold text-xs transition active:scale-95"><I d={IC.trash} size={14}/>Eliminar</button>}
         <div className="text-right">
           <p className="text-xl font-bold text-emerald-600">{fmt(r.collected)}</p>
           <p className="text-xs text-gray-400">{r.delivered}/{(r.stops||[]).length} entregas</p>
@@ -1918,7 +1934,7 @@ const PastRouteDetail = ({route:r,onBack})=>{
    MÓDULO 3: REPARTO (full flow - load truck → build route → deliver)
    ============================================================ */
 const DeliveryModule = ()=>{
-  const{activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,pastRoutes,role}=useApp();
+  const{activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,pastRoutes,role,tenant}=useApp();
   const[showInit,setShowInit]=useState(false);
   const[selPast,setSelPast]=useState(null);
   if(selPast)return <PastRouteDetail route={selPast} onBack={()=>setSelPast(null)}/>;
@@ -1929,21 +1945,23 @@ const DeliveryModule = ()=>{
   };
   const deleteRoute=(id)=>setPendingRoutes(prev=>prev.filter(r=>r.id!==id));
 
+  const canCreateRoute = role==='admin'||(role==='repartidor'&&tenant?.allow_create_route);
+
   if(showInit&&!activeRoute)return <InitRoute onClose={()=>setShowInit(false)}/>;
   if(activeRoute)return <ActiveRoute/>;
 
   return(<div className="space-y-4">
     <div className="flex items-center justify-between">
       <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto</h2>
-      {role==='admin'&&<Btn v="primary" size="sm" onClick={()=>setShowInit(true)}><I d={IC.plus} size={16}/>Nuevo</Btn>}
+      {canCreateRoute&&<Btn v="primary" size="sm" onClick={()=>setShowInit(true)}><I d={IC.plus} size={16}/>Nuevo</Btn>}
     </div>
 
     {pendingRoutes.length===0&&(
       <div className="text-center py-10">
         <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-sky-100 to-sky-200 dark:from-sky-900/40 dark:to-sky-800/30 flex items-center justify-center mx-auto mb-5"><I d={IC.truck} size={36} className="text-sky-600 dark:text-sky-400"/></div>
         <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 mb-1">Sin repartos pendientes</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[260px] mx-auto">El admin planifica el recorrido y el repartidor lo inicia</p>
-        {role==='admin'&&<Btn v="primary" size="lg" onClick={()=>setShowInit(true)} className="mx-auto shadow-lg shadow-sky-600/25"><I d={IC.plus} size={22}/>Planificar reparto</Btn>}
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[260px] mx-auto">{canCreateRoute?'Iniciá la planificación del recorrido':'El admin planifica el recorrido y el repartidor lo inicia'}</p>
+        {canCreateRoute&&<Btn v="primary" size="lg" onClick={()=>setShowInit(true)} className="mx-auto shadow-lg shadow-sky-600/25"><I d={IC.plus} size={22}/>Planificar reparto</Btn>}
       </div>
     )}
 
@@ -1964,7 +1982,7 @@ const DeliveryModule = ()=>{
             </div>
             <div className="flex flex-wrap gap-1 mb-3">{r.stops.map((s,i)=>(<span key={i} className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">{s.clientName}</span>))}</div>
             <div className="flex gap-2">
-              {role==='admin'&&<button onClick={()=>deleteRoute(r.id)} className="px-3 py-2 rounded-xl text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 transition">Cancelar</button>}
+              {canCreateRoute&&<button onClick={()=>deleteRoute(r.id)} className="px-3 py-2 rounded-xl text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 transition">Cancelar</button>}
               <Btn v="success" onClick={()=>startRoute(r)} className="flex-1" size="sm"><I d={IC.play} size={16}/>Iniciar reparto</Btn>
             </div>
           </Card>
@@ -1976,7 +1994,7 @@ const DeliveryModule = ()=>{
       <div>
         <p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Anteriores</p>
         <div className="space-y-2">{pastRoutes.map((r,i)=>(
-          <Card key={i} onClick={()=>r.stops&&typeof r.stops!=='number'&&setSelPast(r)} className={`!p-3 ${r.stops&&typeof r.stops!=='number'?'cursor-pointer active:scale-[0.98] transition-transform':''}`}>
+          <Card key={i} onClick={()=>r.stops&&typeof r.stops!=='number'&&setSelPast(r)} className={`!p-3 ${r.stops&&typeof r.stops!=='number'?'cursor-pointer hover:border-sky-200/50 dark:hover:border-sky-800/50 transition-all active:scale-[0.98]':''}`}>
             <div className="flex justify-between items-start">
               <div>
                 <p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{r.routeNum?`#${r.routeNum} · `:''}{r.date}</p>
@@ -1984,6 +2002,7 @@ const DeliveryModule = ()=>{
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-emerald-600">{fmt(r.collected)}</span>
+                {role==='admin'&&<button onClick={(e)=>{e.stopPropagation();if(window.confirm('¿Eliminar historial de reparto?')) setPastRoutes(p=>p.filter(x=>x.id!==r.id));}} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition ml-1" title="Eliminar"><I d={IC.trash} size={14}/></button>}
                 {r.stops&&typeof r.stops!=='number'&&<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-400"><path d="M9 18l6-6-6-6"/></svg>}
               </div>
             </div>
@@ -2029,7 +2048,7 @@ const InitRoute = ({onClose})=>{
       {truckItems.length>0&&<div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-3"><div className="flex justify-between"><span className="text-sm font-bold text-sky-700 dark:text-sky-400">En el camión</span><span className="text-sm font-bold text-sky-700 dark:text-sky-400">{fmt(truckTotal)}</span></div></div>}
       <Btn v="primary" onClick={()=>setStep(1)} disabled={!truckItems.length} className="w-full" size="lg">Siguiente: Armar recorrido</Btn>
     </div>}
-    {step===1&&<BuildRoute mode={mode} setMode={setMode} selZones={selZones} setSelZones={setSelZones} rc={rc} setRc={setRc} onBack={()=>setStep(0)} onNext={()=>setStep(2)}/>}
+    {step===1&&<BuildRoute mode={mode} setMode={setMode} selZones={selZones} setSelZones={setSelZones} rc={rc} setRc={setRc} onBack={()=>setStep(0)} onNext={(visibleClients)=>{if(visibleClients)setRc(visibleClients);setStep(2);}}/>}
     {step===2&&<div className="space-y-4">
       <RouteMap stops={rc.map(c=>({...c,clientName:c.name}))} height={200}/>
       <Btn v="outline" size="sm" onClick={()=>openGMaps(rc)} className="w-full"><I d={IC.nav} size={16}/>Abrir en Google Maps</Btn>
@@ -2055,32 +2074,201 @@ const InitRoute = ({onClose})=>{
 };
 
 const BuildRoute = ({mode,setMode,selZones,setSelZones,rc,setRc,onBack,onNext})=>{
-  const{clients}=useApp();const[showAdd,setShowAdd]=useState(false);const[search,setSearch]=useState('');
-  const toggleZone=(n)=>{const s=selZones.includes(n);setSelZones(s?selZones.filter(z=>z!==n):[...selZones,n]);if(s)setRc(p=>p.filter(c=>c.zone!==n));else{const zc=clients.filter(c=>c.zone===n&&!rc.find(r=>r.id===c.id));setRc(p=>[...p,...zc]);}};
+  const{clients,orders,tenant}=useApp();const[showAdd,setShowAdd]=useState(false);const[search,setSearch]=useState('');
+  const[hideDelivered,setHideDelivered]=useState(false);const[deliveryDays,setDeliveryDays]=useState(7);const[showFilters,setShowFilters]=useState(false);
+  const[startPoint,setStartPoint]=useState('deposito');
+  const[userLocation,setUserLocation]=useState(null);
+  const[optimizing,setOptimizing]=useState(false);
+
+  // Calculate days since last delivered order for each client
+  const getLastDeliveryDays = useCallback((clientId) => {
+    const clientOrders = (orders||[]).filter(o => o.clientId === clientId && o.status === 'entregado');
+    if (!clientOrders.length) return null; // never delivered
+    const latest = Math.max(...clientOrders.map(o => o.createdAt));
+    const days = Math.floor((Date.now() - latest) / (1000 * 60 * 60 * 24));
+    return days;
+  }, [orders]);
+
+  // Color + label for delivery recency
+  const getDeliveryBadge = (clientId) => {
+    const days = getLastDeliveryDays(clientId);
+    if (days === null) return { variant: 'default', label: 'Sin entregas', color: 'gray' };
+    if (days === 0) return { variant: 'success', label: 'Hoy', color: 'green' };
+    if (days <= deliveryDays) return { variant: 'success', label: `Hace ${days}d`, color: 'green' };
+    if (days <= 14) return { variant: 'warning', label: `Hace ${days}d`, color: 'amber' };
+    return { variant: 'danger', label: `Hace ${days}d`, color: 'red' };
+  };
+
+  // Check if client was delivered within the threshold
+  const wasRecentlyDelivered = (clientId) => {
+    const days = getLastDeliveryDays(clientId);
+    if (days === null) return false;
+    return days <= deliveryDays;
+  };
+
+  // Sort clients: those with longest time since delivery first, never-delivered at top
+  const sortByDeliveryRecency = (list) => {
+    return [...list].sort((a, b) => {
+      const daysA = getLastDeliveryDays(a.id);
+      const daysB = getLastDeliveryDays(b.id);
+      if (daysA === null && daysB === null) return 0;
+      if (daysA === null) return -1;
+      if (daysB === null) return 1;
+      return daysB - daysA; // higher days first
+    });
+  };
+
+  const toggleZone=(n)=>{const s=selZones.includes(n);setSelZones(s?selZones.filter(z=>z!==n):[...selZones,n]);if(s)setRc(p=>p.filter(c=>c.zone!==n));else{let zc=clients.filter(c=>c.zone===n&&!rc.find(r=>r.id===c.id));if(hideDelivered)zc=zc.filter(c=>!wasRecentlyDelivered(c.id));zc=sortByDeliveryRecency(zc);setRc(p=>[...p,...zc]);}};
   const addC=(c)=>{if(!rc.find(r=>r.id===c.id))setRc(p=>[...p,c]);setShowAdd(false);setSearch('');};
   const moveC=(i,d)=>{const n=[...rc];const t=i+d;if(t<0||t>=n.length)return;[n[i],n[t]]=[n[t],n[i]];setRc(n);};
   const avail=clients.filter(c=>!rc.find(r=>r.id===c.id));
   const searched=search?avail.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||c.address.toLowerCase().includes(search.toLowerCase())||(c.zone||'').toLowerCase().includes(search.toLowerCase())):avail;
+
+  // Visible route clients (filtered)
+  const visibleRc = hideDelivered ? rc.filter(c => !wasRecentlyDelivered(c.id)) : rc;
+  const hiddenCount = rc.length - visibleRc.length;
+
+  // Stats for the filter section
+  const recentCount = rc.filter(c => wasRecentlyDelivered(c.id)).length;
+
   return(<div className="space-y-4"><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center"><I d={IC.route} size={22} className="text-violet-600"/></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Armar recorrido</h3><p className="text-xs text-gray-500">Por zona, por cliente, o combiná</p></div></div>
     {!mode?(<div className="grid grid-cols-2 gap-3"><Card onClick={()=>setMode('zona')} className="!p-5 text-center"><div className="w-14 h-14 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mx-auto mb-3"><I d={IC.mapPin2} size={26} className="text-violet-600"/></div><p className="font-bold text-sm text-gray-900 dark:text-gray-100">Por zona</p></Card><Card onClick={()=>setMode('cliente')} className="!p-5 text-center"><div className="w-14 h-14 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center mx-auto mb-3"><I d={IC.users} size={26} className="text-sky-600"/></div><p className="font-bold text-sm text-gray-900 dark:text-gray-100">Por cliente</p></Card></div>):(<>
       <div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Zonas</p><div className="flex flex-wrap gap-2">{[...new Set(clients.filter(c=>c.zone).map(c=>c.zone))].map(z=>{const s=selZones.includes(z);const cnt=clients.filter(c=>c.zone===z).length;return <button key={z} onClick={()=>toggleZone(z)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border-2 transition-all active:scale-95 ${s?'bg-violet-600 text-white border-violet-600':'bg-gray-50 dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700'}`}>{s&&<I d={IC.check} size={14}/>}{z} <span className="opacity-60">({cnt})</span></button>;})}</div></div>
-      {rc.length>0&&<RouteMap stops={rc.map(c=>({...c,clientName:c.name}))} height={200}/>}
-      {rc.length>0&&<div><div className="flex justify-between mb-2"><p className="text-[11px] font-semibold text-gray-500 uppercase">Paradas ({rc.length})</p><button onClick={()=>setShowAdd(true)} className="flex items-center gap-1 text-xs font-semibold text-sky-600"><I d={IC.userPlus} size={14}/>Agregar</button></div><div className="space-y-1.5">{rc.map((c,i)=>(<div key={c.id} className="flex items-center gap-2 bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-800 rounded-xl p-2.5"><div className="flex flex-col gap-0.5"><button onClick={()=>moveC(i,-1)} disabled={!i} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 15l-6-6-6 6"/></svg></button><button onClick={()=>moveC(i,1)} disabled={i===rc.length-1} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg></button></div><div className="w-6 h-6 rounded-full bg-sky-100 dark:bg-sky-800 flex items-center justify-center text-[11px] font-bold text-sky-700 dark:text-sky-400">{i+1}</div><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{c.name}</p><p className="text-xs text-gray-400 truncate">{c.address}</p></div><Badge variant="violet" className="shrink-0">{c.zone}</Badge><button onClick={()=>setRc(p=>p.filter(x=>x.id!==c.id))} className="p-1 text-gray-400 hover:text-red-500"><I d={IC.x} size={16}/></button></div>))}</div></div>}
+
+      {/* ===== FILTER PANEL ===== */}
+      {rc.length>0&&<div className="bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-800 rounded-xl overflow-hidden">
+        <button onClick={()=>setShowFilters(p=>!p)} className="w-full flex items-center justify-between px-4 py-3 text-left">
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${hideDelivered?'bg-emerald-100 dark:bg-emerald-900/30':'bg-gray-100 dark:bg-gray-800'}`}>
+              <I d={IC.clock} size={16} className={hideDelivered?'text-emerald-600':'text-gray-400'}/>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Filtrar por entrega</p>
+              <p className="text-[10px] text-gray-400">{hideDelivered?`Ocultando ${hiddenCount} ya entregados`:`${recentCount} entregados en últimos ${deliveryDays}d`}</p>
+            </div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={`text-gray-400 transition-transform duration-200 ${showFilters?'rotate-180':''}`}><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        {showFilters&&<div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-gray-700 dark:text-gray-300 font-medium">Ocultar ya entregados</label>
+            <button onClick={()=>setHideDelivered(p=>!p)} className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${hideDelivered?'bg-emerald-500':'bg-gray-300 dark:bg-gray-600'}`}>
+              <div className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200 ${hideDelivered?'translate-x-5':'translate-x-0'}`}/>
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">Últimos</label>
+            <div className="flex items-center gap-1">
+              <button onClick={()=>setDeliveryDays(d=>Math.max(1,d-1))} className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500 active:scale-90 transition font-bold select-none">−</button>
+              <input type="number" inputMode="numeric" value={deliveryDays} onChange={e=>{const v=parseInt(e.target.value);if(v>0)setDeliveryDays(v);}} onFocus={e=>e.target.select()} className="w-12 h-8 text-center text-sm font-bold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:border-sky-500 tabular-nums"/>
+              <button onClick={()=>setDeliveryDays(d=>d+1)} className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600 active:scale-90 transition font-bold select-none">+</button>
+            </div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">días</label>
+          </div>
+          {/* Quick presets */}
+          <div className="flex gap-1.5">{[3,5,7,14].map(d=>(<button key={d} onClick={()=>setDeliveryDays(d)} className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${deliveryDays===d?'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400':'bg-gray-50 dark:bg-gray-800 text-gray-400'}`}>{d}d</button>))}</div>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100 dark:border-gray-800">
+            <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"/>Entregado ≤{deliveryDays}d</span>
+            <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>Entregado ≤14d</span>
+            <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Hace +14d</span>
+            <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className="w-2 h-2 rounded-full bg-gray-300 inline-block"/>Sin entregas</span>
+          </div>
+        </div>}
+      </div>}
+
+      {visibleRc.length>0&&<RouteMap stops={visibleRc.map(c=>({...c,clientName:c.name}))} height={200} depot={startPoint==='deposito'&&tenant?.depot_lat?{lat:tenant.depot_lat,lng:tenant.depot_lng,address:'Depósito'}:startPoint==='gps'&&userLocation?{lat:userLocation.lat,lng:userLocation.lng,address:'Ubicación Actual'}:null}/>}
+      {visibleRc.length>0&&<div><div className="flex justify-between mb-2"><p className="text-[11px] font-semibold text-gray-500 uppercase">Paradas ({visibleRc.length}){hiddenCount>0&&<span className="text-emerald-500 font-normal ml-1">· {hiddenCount} ocultos</span>}</p><button onClick={()=>setShowAdd(true)} className="flex items-center gap-1 text-xs font-semibold text-sky-600"><I d={IC.userPlus} size={14}/>Agregar</button></div><div className="space-y-1.5">{visibleRc.map((c,i)=>{const db=getDeliveryBadge(c.id);return(<div key={c.id} className={`flex items-center gap-2 bg-white dark:bg-gray-900 border rounded-xl p-2.5 transition-all ${db.color==='green'?'border-emerald-200/80 dark:border-emerald-800/50':db.color==='amber'?'border-amber-200/80 dark:border-amber-800/50':db.color==='red'?'border-red-200/80 dark:border-red-800/50':'border-gray-200/80 dark:border-gray-800'}`}><div className="flex flex-col gap-0.5"><button onClick={()=>moveC(rc.indexOf(c),rc.indexOf(c)>0?-1:0)} disabled={rc.indexOf(c)===0} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 15l-6-6-6 6"/></svg></button><button onClick={()=>moveC(rc.indexOf(c),rc.indexOf(c)<rc.length-1?1:0)} disabled={rc.indexOf(c)===rc.length-1} className="text-gray-400 disabled:opacity-20"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg></button></div><div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${db.color==='green'?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400':'bg-sky-100 dark:bg-sky-800 text-sky-700 dark:text-sky-400'}`}>{i+1}</div><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{c.name}</p><p className="text-xs text-gray-400 truncate">{c.address}</p></div><div className="flex flex-col items-end gap-0.5 shrink-0"><Badge variant="violet">{c.zone}</Badge><Badge variant={db.variant}>{db.label}</Badge></div><button onClick={()=>setRc(p=>p.filter(x=>x.id!==c.id))} className="p-1 text-gray-400 hover:text-red-500"><I d={IC.x} size={16}/></button></div>);})}</div></div>}
+      {rc.length>0&&hiddenCount>0&&visibleRc.length===0&&<div className="text-center py-6"><div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3"><I d={IC.check} size={28} className="text-emerald-600"/></div><p className="font-bold text-sm text-gray-900 dark:text-gray-100 mb-1">Todos entregados</p><p className="text-xs text-gray-400 mb-3">Los {hiddenCount} clientes de esta zona ya recibieron entrega en los últimos {deliveryDays} días</p><Btn v="outline" size="sm" onClick={()=>setHideDelivered(false)} className="mx-auto">Mostrar todos</Btn></div>}
+      
+      {/* ===== OPTIMIZATION PANEL ===== */}
+      {visibleRc.length > 1 && (
+        <Card className="!bg-indigo-50 dark:!bg-indigo-900/10 border border-indigo-200/50 dark:border-indigo-800/50 !p-4">
+          <p className="text-[11px] font-bold text-indigo-500 uppercase mb-2">Punto de partida y optimización</p>
+          <div className="flex gap-2 mb-3">
+            {[ ['deposito','Depósito'], ['gps','Mi Ubicación'] ].map(([k,l]) => (
+               <button key={k} onClick={() => setStartPoint(k)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${startPoint===k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-indigo-300'}`}>{l}</button>
+            ))}
+          </div>
+          <Btn v="primary" onClick={() => {
+            let lat, lng;
+            if (startPoint === 'deposito') {
+              if (tenant?.depot_lat) { lat = tenant.depot_lat; lng = tenant.depot_lng; }
+              else { alert("No hay depósito configurado. Modificalo en Configuración."); return; }
+            } else if (startPoint === 'gps') {
+              if (userLocation) { lat = userLocation.lat; lng = userLocation.lng; }
+              else {
+                alert("Obteniendo ubicación... reintentá en un segundo (asegurate de dar permiso).");
+                if (navigator.geolocation) navigator.geolocation.getCurrentPosition(p => setUserLocation({lat: p.coords.latitude, lng: p.coords.longitude}));
+                else alert("Geolocalización no soportada.");
+                return;
+              }
+            }
+            setOptimizing(true);
+            setTimeout(() => {
+              const allWithCoords = rc.filter(c => c.lat && c.lng);
+              const allNoCoords = rc.filter(c => !c.lat || !c.lng);
+              let unv = [...allWithCoords];
+              let opt = [];
+              let cl = lat, cg = lng;
+              while (unv.length > 0) {
+                 let nI = 0, mD = Infinity;
+                 unv.forEach((c, i) => { const d = getDistance(cl, cg, c.lat, c.lng); if (d < mD) { mD = d; nI = i; } });
+                 const nC = unv.splice(nI, 1)[0];
+                 opt.push(nC);
+                 cl = nC.lat; cg = nC.lng;
+              }
+              setRc([...opt, ...allNoCoords]);
+              setOptimizing(false);
+            }, 50);
+          }} disabled={optimizing} className="w-full !bg-indigo-600 hover:!bg-indigo-700 !border-indigo-700 shadow-lg shadow-indigo-600/30">
+             {optimizing ? 'Optimizando...' : <span className="flex items-center justify-center gap-1.5"><I d={IC.route} size={16}/>Optimizar por cercanía</span>}
+          </Btn>
+        </Card>
+      )}
+
       {mode==='cliente'&&!rc.length&&<Btn v="outline" onClick={()=>setShowAdd(true)} className="w-full"><I d={IC.userPlus} size={18}/>Agregar clientes</Btn>}
-      <Modal open={showAdd} onClose={()=>{setShowAdd(false);setSearch('');}} title="Agregar cliente"><div className="space-y-3"><Search value={search} onChange={setSearch} placeholder="Nombre, dirección o zona..."/><div className="space-y-1 max-h-[50vh] overflow-y-auto">{searched.map(c=>(<button key={c.id} onClick={()=>addC(c)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition text-left"><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{c.name}</span><Badge variant="violet">{c.zone}</Badge></div><p className="text-xs text-gray-400 truncate">{c.address}</p></div><div className="w-9 h-9 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0"><I d={IC.plus} size={18} className="text-sky-600"/></div></button>))}</div></div></Modal>
-      <div className="flex gap-2"><Btn v="secondary" onClick={()=>{setMode(null);setRc([]);setSelZones([]);}} className="flex-1">Cambiar</Btn><Btn v="primary" onClick={onNext} disabled={!rc.length} className="flex-1" size="lg">Siguiente</Btn></div>
+      <Modal open={showAdd} onClose={()=>{setShowAdd(false);setSearch('');}} title="Agregar cliente"><div className="space-y-3"><Search value={search} onChange={setSearch} placeholder="Nombre, dirección o zona..."/><div className="space-y-1 max-h-[50vh] overflow-y-auto">{searched.map(c=>{const db=getDeliveryBadge(c.id);return(<button key={c.id} onClick={()=>addC(c)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition text-left"><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{c.name}</span><Badge variant="violet">{c.zone}</Badge><Badge variant={db.variant}>{db.label}</Badge></div><p className="text-xs text-gray-400 truncate">{c.address}</p></div><div className="w-9 h-9 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0"><I d={IC.plus} size={18} className="text-sky-600"/></div></button>);})}</div></div></Modal>
+      <div className="flex gap-2"><Btn v="secondary" onClick={()=>{setMode(null);setRc([]);setSelZones([]);}} className="flex-1">Cambiar</Btn><Btn v="success" onClick={()=>onNext(visibleRc)} disabled={!visibleRc.length} className="flex-1" size="lg">Siguiente ({visibleRc.length})</Btn></div>
     </>)}
     {!mode&&<Btn v="secondary" onClick={onBack} className="w-full">Volver</Btn>}
   </div>);
 };
 
-const ActiveRoute = ()=>{const{activeRoute:ar,setActiveRoute,setPastRoutes,clients,setClients}=useApp();const[sel,setSel]=useState(null);const[showAdd,setShowAdd]=useState(false);const[search,setSearch]=useState('');
+const ActiveRoute = ()=>{const{activeRoute:ar,setActiveRoute,setPastRoutes,clients,setClients,tenant,role,products}=useApp();const[sel,setSel]=useState(null);const[showAdd,setShowAdd]=useState(false);const[search,setSearch]=useState('');const[showInv,setShowInv]=useState(false);
   const pend=ar.stops.filter(s=>s.status==='pendiente');const done=ar.stops.filter(s=>s.status==='entregado');const tot=done.reduce((s,x)=>s+(x.payment||0),0);
   const finish=()=>{setPastRoutes(p=>[{...ar,finishedAt:Date.now(),date:new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'}),delivered:done.length,collected:tot},...p]);setActiveRoute(null);};
   const avail=clients.filter(c=>!ar.stops.find(s=>s.clientId===c.id));const searched=search?avail.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())):avail;
   const addC=(c)=>{setActiveRoute({...ar,stops:[...ar.stops,{id:ar.stops.length+1,clientId:c.id,clientName:c.name,address:c.address,zone:c.zone,lat:c.lat,lng:c.lng,status:'pendiente',items:[],returnContainers:{sifones:0,bidones:0},payment:null,paymentMethod:null,total:0}]});setShowAdd(false);setSearch('');};
+  const showStock = true; // El conductor siempre debe poder ver lo que tiene cargado en SU camión
+  const truckItems = Object.entries(ar.truckStock||{}).filter(([,q])=>q>0).map(([id,q])=>({id:Number(id),qty:q,product:products.find(p=>p.id===Number(id))}));
+  const getRemainingStock = (productId) => {
+    const start = ar.truckStock[productId]||0;
+    const delivered = done.reduce((sum,s)=>sum+(s.items||[]).filter(i=>i.productId===productId).reduce((s2,i)=>s2+i.qty,0),0);
+    return start - delivered;
+  };
   if(sel)return <StopDetail stop={sel} onBack={()=>setSel(null)}/>;
-  return(<div className="space-y-4"><div className="flex justify-between"><div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto en curso</h2><p className="text-xs text-gray-500">{ar.startedAt}</p></div><Badge variant="info">{pend.length} pend.</Badge></div><RouteMap stops={ar.stops} height={220}/><Btn v="outline" size="sm" onClick={()=>openGMaps(pend.length?pend:ar.stops)} className="w-full"><I d={IC.nav} size={16}/>Google Maps</Btn><div className="grid grid-cols-3 gap-3"><Stat label="Pendientes" value={pend.length} variant="warning"/><Stat label="Entregados" value={done.length} variant="success"/><Stat label="Cobrado" value={fmt(tot)} variant="success"/></div><Btn v="outline" onClick={()=>setShowAdd(true)} className="w-full" size="sm"><I d={IC.userPlus} size={16}/>Agregar parada</Btn>
+  return(<div className="space-y-4"><div className="flex justify-between"><div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Reparto en curso</h2><p className="text-xs text-gray-500">{ar.startedAt}</p></div><Badge variant="info">{pend.length} pend.</Badge></div><RouteMap stops={ar.stops} height={220}/>
+    <div className="flex gap-2">
+      {showStock&&<Btn v="outline" size="sm" onClick={()=>setShowInv(true)} className="flex-1 text-amber-600 hover:text-amber-700 dark:text-amber-500 border-amber-200 hover:bg-amber-50 dark:border-amber-900/40 dark:hover:bg-amber-900/20"><I d={IC.pkg} size={16}/>Camión</Btn>}
+      <Btn v="outline" size="sm" onClick={()=>openGMaps(pend.length?pend:ar.stops)} className="flex-1"><I d={IC.nav} size={16}/>Mapas</Btn>
+    </div>
+    <div className="grid grid-cols-3 gap-3"><Stat label="Pendientes" value={pend.length} variant="warning"/><Stat label="Entregados" value={done.length} variant="success"/><Stat label="Cobrado" value={fmt(tot)} variant="success"/></div><Btn v="outline" onClick={()=>setShowAdd(true)} className="w-full" size="sm"><I d={IC.userPlus} size={16}/>Agregar parada</Btn>
+    <Modal open={showInv} onClose={()=>setShowInv(false)} title="Inventario del Camión">
+      <div className="space-y-3">
+        {truckItems.map(({id,qty,product})=>(
+          <div key={id} className="flex justify-between items-center py-2 px-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{product?.name||'Producto'}</span>
+            <div className="text-right">
+              <span className="text-sm font-bold text-sky-600 dark:text-sky-400">{getRemainingStock(id)} un.</span>
+              <p className="text-xs text-gray-400">cargadas {qty}</p>
+            </div>
+          </div>
+        ))}
+        {truckItems.length===0&&<p className="text-sm text-gray-500 text-center py-4">No hay productos cargados en el camión</p>}
+        <Btn v="secondary" onClick={()=>setShowInv(false)} className="w-full mt-2">Cerrar</Btn>
+      </div>
+    </Modal>
     <Modal open={showAdd} onClose={()=>{setShowAdd(false);setSearch('');}} title="Agregar parada"><div className="space-y-3"><Search value={search} onChange={setSearch}/><div className="space-y-1 max-h-[50vh] overflow-y-auto">{searched.map(c=>(<button key={c.id} onClick={()=>addC(c)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-left"><div className="flex-1 min-w-0"><span className="font-semibold text-sm text-gray-900 dark:text-gray-100 block truncate">{c.name}</span><p className="text-xs text-gray-400 truncate">{c.address}</p></div><div className="w-9 h-9 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center"><I d={IC.plus} size={18} className="text-sky-600"/></div></button>))}</div></div></Modal>
     {pend.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Pendientes</p>{pend.map((s,i)=>(<Card key={s.id} onClick={()=>setSel(s)} className={`!p-3 mb-2 ${s.ausente?'!border-orange-200 dark:!border-orange-800':''}`}><div className="flex items-center gap-3"><div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${s.ausente?'bg-orange-100 dark:bg-orange-900/30 text-orange-600':'bg-amber-100 dark:bg-amber-900/30 text-amber-700'}`}>{s.ausente?<I d={IC.alert} size={16}/>:i+1}</div><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{s.clientName}</p><p className="text-xs text-gray-400 truncate">{s.ausente?`Ausente · ${new Date(s.ausenteAt).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`:s.address}</p></div><div className="flex items-center gap-1"><Badge variant="violet">{s.zone}</Badge></div></div></Card>))}</div>}
     {done.length>0&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Entregados</p>{done.map(s=>(<Card key={s.id} className="!p-3 mb-2 opacity-60"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><I d={IC.check} size={16} className="text-emerald-600"/></div><div className="flex-1"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{s.clientName}</p><p className="text-xs text-gray-400">{s.paymentMethod==='fiado'?'Fiado':`${s.paymentMethod} — ${fmt(s.payment)}`}</p></div></div></Card>))}</div>}
@@ -2166,28 +2354,293 @@ const MetricsModule=()=>{
   </div>);
 };
 /* ============================================================
+   MÓDULO 5: CONFIGURACIÓN (admin only)
+   ============================================================ */
+import { inviteUser, updateUserProfile, removeUser, getTeamMembers, updateTenantInfo, getTenantInfo } from '@/app/actions/invite-user';
+
+const ConfigModule = () => {
+  const { role, profile, setTenant } = useApp();
+  const [tab, setTab] = useState('equipo');
+  const [team, setTeam] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Modals state
+  const [showInvite, setShowInvite] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+  
+  // Forms state
+  const [invEmail, setInvEmail] = useState('');
+  const [invPass, setInvPass] = useState('');
+  const [invName, setInvName] = useState('');
+  const [invRole, setInvRole] = useState('repartidor');
+  const [invLoading, setInvLoading] = useState(false);
+  const [invError, setInvError] = useState('');
+  
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
+  const [toast, setToast] = useState('');
+
+  // Tenant info
+  const [tenantName, setTenantName] = useState('');
+  const [tenantPhone, setTenantPhone] = useState('');
+  const [tenantAddress, setTenantAddress] = useState('');
+  const [depotLat, setDepotLat] = useState(null);
+  const [depotLng, setDepotLng] = useState(null);
+  const [depotAddress, setDepotAddress] = useState('');
+  const [tenantLoading, setTenantLoading] = useState(false);
+  const [depotAddressInput, setDepotAddressInput] = useState('');
+  const [showStockDriver, setShowStockDriver] = useState(false);
+  const [allowCreateRoute, setAllowCreateRoute] = useState(false);
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const loadTeam = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+    setLoading(true);
+    const res = await getTeamMembers(profile.tenant_id);
+    if (res.success) setTeam(res.data);
+    setLoading(false);
+  }, [profile?.tenant_id]);
+
+  const loadTenant = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+    const res = await getTenantInfo(profile.tenant_id);
+    if (res.success && res.data) {
+      setTenantName(res.data.name || '');
+      setTenantPhone(res.data.phone || '');
+      setTenantAddress(res.data.address || '');
+      setDepotLat(res.data.depot_lat || null);
+      setDepotLng(res.data.depot_lng || null);
+      setDepotAddress(res.data.depot_address || '');
+      setDepotAddressInput(res.data.depot_address || '');
+      setShowStockDriver(res.data.show_stock_driver || false);
+      setAllowCreateRoute(res.data.allow_create_route || false);
+    }
+  }, [profile?.tenant_id]);
+
+  useEffect(() => { loadTeam(); loadTenant(); }, [loadTeam, loadTenant]);
+
+  const handleInvite = async () => {
+    setInvLoading(true); setInvError('');
+    const res = await inviteUser({ email: invEmail, password: invPass, fullName: invName, role: invRole, tenantId: profile.tenant_id });
+    setInvLoading(false);
+    if (res.success) {
+      showToast('✅ Usuario creado');
+      setShowInvite(false); setInvEmail(''); setInvPass(''); setInvName(''); setInvRole('repartidor');
+      loadTeam();
+    } else {
+      setInvError(res.error);
+    }
+  };
+
+  const handleSaveUser = async () => {
+    setEditLoading(true);
+    const res = await updateUserProfile(editingUser.id, { full_name: editName, role: editRole });
+    setEditLoading(false);
+    if (res.success) { showToast('✅ Usuario actualizado'); setEditingUser(null); loadTeam(); }
+    else { showToast('❌ ' + res.error); }
+  };
+
+  const handleDelete = async (userId) => {
+    const res = await removeUser(userId);
+    if (res.success) { showToast('✅ Usuario eliminado'); loadTeam(); }
+    setConfirmDel(null);
+  };
+
+  const handleSaveTenant = async () => {
+    setTenantLoading(true);
+    const res = await updateTenantInfo(profile.tenant_id, { name: tenantName, phone: tenantPhone, address: tenantAddress, depotLat, depotLng, depotAddress, showStockDriver, allowCreateRoute });
+    setTenantLoading(false);
+    if (res.success) {
+      showToast('✅ Datos guardados');
+      setTenant(p=>({...p,show_stock_driver:showStockDriver,allow_create_route:allowCreateRoute}));
+    } else showToast('❌ ' + res.error);
+  };
+
+  const ROLE_LABELS = { admin: 'Admin', operador: 'Operador', repartidor: 'Repartidor' };
+  const ROLE_COLORS = { admin: 'info', operador: 'warning', repartidor: 'success' };
+  const ROLE_BG = { admin: 'bg-sky-500', operador: 'bg-amber-500', repartidor: 'bg-emerald-500' };
+
+  if (role !== 'admin') return <div className="text-center py-10"><p className="text-sm text-gray-400">Sin acceso</p></div>;
+
+  return (<div className="space-y-4">
+    {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs font-bold shadow-lg bg-emerald-100 text-emerald-700">{toast}</div>}
+    <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Configuración</h2>
+
+    {/* TABS */}
+    <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+      {[['equipo','Equipo'],['soderia','Sodería'],['deposito','Depósito']].map(([k,l]) => (
+        <button key={k} onClick={() => setTab(k)} className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition ${tab===k ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{l}</button>
+      ))}
+    </div>
+
+    {/* ===== TAB: EQUIPO ===== */}
+    {tab === 'equipo' && <div className="space-y-3">
+      <div className="flex justify-between items-center">
+        <p className="text-[11px] font-semibold text-gray-500 uppercase">Usuarios ({team.length})</p>
+        <Btn v="primary" size="sm" onClick={() => setShowInvite(true)}><I d={IC.userPlus} size={16}/>Invitar</Btn>
+      </div>
+
+      {loading ? <div className="text-center py-6"><div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto"/></div> :
+      team.length === 0 ? <EmptyState icon={IC.users} title="Sin usuarios" description="Invitá a tu equipo" action={() => setShowInvite(true)} actionLabel="Invitar"/> :
+      <div className="space-y-2">{team.map(u => (
+        <Card key={u.id} className="!p-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl ${ROLE_BG[u.role] || 'bg-gray-400'} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+              {(u.full_name || u.email || '?')[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{u.full_name || u.email}</p>
+              <p className="text-xs text-gray-400 truncate">{u.email}</p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Badge variant={ROLE_COLORS[u.role] || 'default'}>{ROLE_LABELS[u.role] || u.role}</Badge>
+              <button onClick={() => { setEditingUser(u); setEditName(u.full_name || ''); setEditRole(u.role); }} className="p-1.5 rounded-lg text-gray-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition" title="Editar"><I d={IC.edit} size={14}/></button>
+              {u.id !== profile.id && <>
+                <button onClick={() => setConfirmDel(u)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition" title="Eliminar"><I d={IC.trash} size={14}/></button>
+              </>}
+            </div>
+          </div>
+        </Card>
+      ))}</div>}
+
+      {/* INVITE MODAL */}
+      <Modal open={showInvite} onClose={() => { setShowInvite(false); setInvError(''); }} title="Invitar usuario">
+        <div className="space-y-4">
+          <div><label className="text-xs text-gray-500 block mb-1">Nombre</label><input value={invName} onChange={e => setInvName(e.target.value)} placeholder="Juan Pérez" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+          <div><label className="text-xs text-gray-500 block mb-1">Email</label><input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)} placeholder="usuario@email.com" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+          <div><label className="text-xs text-gray-500 block mb-1">Contraseña</label><input type="text" value={invPass} onChange={e => setInvPass(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-2">Rol</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[['admin','Admin','Acceso total'],['operador','Operador','Solo stock'],['repartidor','Repartidor','Reparto + Clientes']].map(([k,l,desc]) => (
+                <button key={k} onClick={() => setInvRole(k)} className={`py-3 px-2 rounded-xl text-center border-2 transition active:scale-95 ${invRole === k ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20' : 'border-gray-200 dark:border-gray-700'}`}>
+                  <p className={`text-sm font-semibold ${invRole === k ? 'text-sky-700 dark:text-sky-400' : 'text-gray-500'}`}>{l}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+          {invError && <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 flex items-start gap-2"><I d={IC.alert} size={15} className="text-red-500 shrink-0 mt-0.5"/><p className="text-xs text-red-600">{invError}</p></div>}
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setShowInvite(false)} className="flex-1">Cancelar</Btn>
+            <Btn v="primary" onClick={handleInvite} disabled={!invEmail || !invPass || invPass.length < 6 || invLoading} className="flex-1">{invLoading ? 'Creando...' : <><I d={IC.check} size={16}/>Crear usuario</>}</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* EDIT MODAL */}
+      <Modal open={!!editingUser} onClose={() => setEditingUser(null)} title="Editar usuario">
+        <div className="space-y-4">
+          <div><label className="text-xs text-gray-500 block mb-1">Nombre</label><input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Ej: Juan Pérez" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-2">Rol {editingUser?.id === profile.id && '(Tu propio rol no se puede cambiar)'}</label>
+            <div className={`grid grid-cols-3 gap-2 ${editingUser?.id === profile.id ? 'opacity-50 pointer-events-none' : ''}`}>
+              {[['admin','Admin'],['operador','Operador'],['repartidor','Repartidor']].map(([k,l]) => (
+                <button key={k} onClick={() => setEditRole(k)} className={`py-3 px-2 rounded-xl text-center border-2 transition active:scale-95 ${editRole === k ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/20' : 'border-gray-200 dark:border-gray-700'}`}>
+                  <p className={`text-sm font-semibold ${editRole === k ? 'text-sky-700 dark:text-sky-400' : 'text-gray-500'}`}>{l}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setEditingUser(null)} className="flex-1">Cancelar</Btn>
+            <Btn v="primary" onClick={handleSaveUser} disabled={!editName || editLoading} className="flex-1">{editLoading ? 'Guardando...' : 'Guardar cambios'}</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* DELETE CONFIRM */}
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Eliminar usuario">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700 dark:text-gray-300">¿Seguro que querés eliminar a <b>{confirmDel?.full_name || confirmDel?.email}</b>? Se eliminará su cuenta y no podrá acceder más.</p>
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setConfirmDel(null)} className="flex-1">Cancelar</Btn>
+            <Btn v="danger" onClick={() => handleDelete(confirmDel.id)} className="flex-1"><I d={IC.trash} size={16}/>Eliminar</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>}
+
+    {/* ===== TAB: SODERÍA ===== */}
+    {tab === 'soderia' && <div className="space-y-4">
+      <Card className="!p-5 space-y-4">
+        <div className="flex items-center gap-3 mb-2"><div className="w-11 h-11 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center"><I d={IC.home} size={22} className="text-sky-600"/></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Datos de la sodería</h3><p className="text-xs text-gray-500">Información general</p></div></div>
+        <div><label className="text-xs text-gray-500 block mb-1">Nombre de la sodería</label><input value={tenantName} onChange={e => setTenantName(e.target.value)} placeholder="Mi Sodería" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+        <div><label className="text-xs text-gray-500 block mb-1">Teléfono</label><input value={tenantPhone} onChange={e => setTenantPhone(e.target.value)} placeholder="11-1234-5678" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+        <div><label className="text-xs text-gray-500 block mb-1">Dirección</label><input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} placeholder="Av. Ejemplo 1234" className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/></div>
+      </Card>
+      <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18}/>{tenantLoading ? 'Guardando...' : 'Guardar cambios'}</Btn>
+    </div>}
+
+    {/* ===== TAB: DEPÓSITO ===== */}
+    {tab === 'deposito' && <div className="space-y-4">
+      <Card className="!p-5 space-y-4">
+        <div className="flex items-center gap-3 mb-2"><div className="w-11 h-11 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><I d={IC.pin} size={22} className="text-emerald-600"/></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Ubicación del depósito</h3><p className="text-xs text-gray-500">Punto de partida para repartos</p></div></div>
+        <AddressInput value={depotAddressInput} onChange={setDepotAddressInput} onSelect={(s) => { setDepotLat(s.lat); setDepotLng(s.lng); setDepotAddress(s.address); setDepotAddressInput(s.address); }} />
+        {depotAddress && <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3"><p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold"><I d={IC.check} size={13} className="inline mr-1"/>Dirección: {depotAddress}</p>{depotLat && <p className="text-[10px] text-emerald-600/60 mt-0.5">Coords: {depotLat?.toFixed(5)}, {depotLng?.toFixed(5)}</p>}</div>}
+      </Card>
+      {depotLat && <RouteMap stops={[{lat:depotLat,lng:depotLng,clientName:'Depósito',address:depotAddress,status:'entregado'}]} height={240} showRoute={false}/>}
+      
+      <Card className="!p-5 space-y-4 mt-4">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Permisos del equipo</h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Acceso a Stock Central</p>
+            <p className="text-xs text-gray-400 mt-0.5 max-w-[280px]">Si se activa, el repartidor podrá acceder a toda la pestaña de "Stock" del depósito además de su reparto.</p>
+          </div>
+          <button onClick={()=>setShowStockDriver(!showStockDriver)} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${showStockDriver?'bg-emerald-500':'bg-gray-200 dark:bg-gray-700'}`}>
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showStockDriver?'translate-x-5':'translate-x-0'}`}/>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
+          <div>
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Permitir crear repartos</p>
+            <p className="text-xs text-gray-400 mt-0.5 max-w-[280px]">Si se activa, el repartidor podrá cargar su propio camión y armar su recorrido desde la app.</p>
+          </div>
+          <button onClick={()=>setAllowCreateRoute(!allowCreateRoute)} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${allowCreateRoute?'bg-emerald-500':'bg-gray-200 dark:bg-gray-700'}`}>
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${allowCreateRoute?'translate-x-5':'translate-x-0'}`}/>
+          </button>
+        </div>
+      </Card>
+
+      <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18}/>{tenantLoading ? 'Guardando...' : 'Guardar ubicación y permisos'}</Btn>
+    </div>}
+  </div>);
+};
+
+/* ============================================================
    HOME
    ============================================================ */
-const HomeView = ()=>{const{activeRoute:ar,clients,role,setView}=useApp();const p=ar?ar.stops.filter(s=>s.status==='pendiente').length:0;const d=ar?ar.stops.filter(s=>s.status==='entregado').length:0;const debt=clients.reduce((s,c)=>s+Math.min(0,c.balance),0);return(<div className="space-y-4"><div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{role==='repartidor'?'Tu reparto':'Panel de control'}</h2><p className="text-sm text-gray-500">{new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div className="grid grid-cols-2 gap-3">{ar?<><Stat label="Pendientes" value={p} variant="warning"/><Stat label="Entregados" value={d} variant="success"/></>:<Stat label="Sin reparto" value="—" sub="Iniciá desde Reparto"/>}{role!=='repartidor'&&<><Stat label="Fiados" value={fmt(debt)} variant="danger"/><Stat label="Clientes" value={clients.length}/></>}</div>{role==='repartidor'&&!ar&&<Btn v="primary" size="lg" onClick={()=>setView('reparto')} className="w-full"><I d={IC.truck} size={20}/>Ir a Reparto</Btn>}{role==='repartidor'&&ar&&<Btn v="success" size="lg" onClick={()=>setView('reparto')} className="w-full"><I d={IC.truck} size={20}/>Continuar ({p})</Btn>}{role==='admin'&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Accesos rápidos</p><div className="grid grid-cols-2 gap-2">{[['clientes','Clientes',IC.users],['stock','Stock',IC.pkg],['reparto','Reparto',IC.truck],['metricas','Métricas',IC.chart]].map(([v,l,icon])=>(<button key={v} onClick={()=>setView(v)} className="flex items-center gap-2 p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/50 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition active:scale-95"><I d={icon} size={18}/>{l}</button>))}</div></div>}</div>);};
+const HomeView = ()=>{const{activeRoute:ar,clients,role,tenant,setView}=useApp();const p=ar?ar.stops.filter(s=>s.status==='pendiente').length:0;const d=ar?ar.stops.filter(s=>s.status==='entregado').length:0;const debt=clients.reduce((s,c)=>s+Math.min(0,c.balance),0);return(<div className="space-y-4"><div><h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{role==='repartidor'?'Tu reparto':role==='operador'?'Stock':'Panel de control'}</h2><p className="text-sm text-gray-500">{new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div className="grid grid-cols-2 gap-3">{ar?<><Stat label="Pendientes" value={p} variant="warning"/><Stat label="Entregados" value={d} variant="success"/></>:<Stat label="Sin reparto" value="—" sub="Iniciá desde Reparto"/>}{role!=='repartidor'&&role!=='operador'&&<><Stat label="Fiados" value={fmt(debt)} variant="danger"/><Stat label="Clientes" value={clients.length}/></>}</div>{role==='repartidor'&&!ar&&<Btn v="primary" size="lg" onClick={()=>setView('reparto')} className="w-full"><I d={IC.truck} size={20}/>Ir a Reparto</Btn>}{role==='repartidor'&&ar&&<Btn v="success" size="lg" onClick={()=>setView('reparto')} className="w-full"><I d={IC.truck} size={20}/>Continuar ({p})</Btn>}{(role==='operador'||(role==='repartidor'&&tenant?.show_stock_driver))&&<Btn v="primary" size="lg" onClick={()=>setView('stock')} className="w-full"><I d={IC.pkg} size={20}/>Ir a Stock general</Btn>}{role==='admin'&&<div><p className="text-[11px] font-semibold text-gray-500 uppercase mb-2">Accesos rápidos</p><div className="grid grid-cols-2 gap-2">{[['clientes','Clientes',IC.users],['stock','Stock',IC.pkg],['reparto','Reparto',IC.truck],['metricas','Métricas',IC.chart]].map(([v,l,icon])=>(<button key={v} onClick={()=>setView(v)} className="flex items-center gap-2 p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800/50 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition active:scale-95"><I d={icon} size={18}/>{l}</button>))}</div></div>}</div>);};
 
 /* ============================================================
    APP SHELL
    ============================================================ */
-const NAV={admin:[{k:'home',l:'Inicio',i:IC.home},{k:'clientes',l:'Clientes',i:IC.users},{k:'stock',l:'Stock',i:IC.pkg},{k:'planes',l:'Planes',i:IC.file},{k:'reparto',l:'Reparto',i:IC.truck},{k:'metricas',l:'Métricas',i:IC.chart}],repartidor:[{k:'home',l:'Inicio',i:IC.home},{k:'reparto',l:'Reparto',i:IC.truck},{k:'clientes',l:'Clientes',i:IC.users}],operador:[{k:'home',l:'Inicio',i:IC.home},{k:'clientes',l:'Clientes',i:IC.users},{k:'stock',l:'Stock',i:IC.pkg},{k:'planes',l:'Planes',i:IC.file},{k:'reparto',l:'Reparto',i:IC.truck}]};
-const VIEWS={home:HomeView,clientes:ClientsModule,stock:StockModule,planes:PlansModule,reparto:DeliveryModule,metricas:MetricsModule};
+const NAV={admin:[{k:'home',l:'Inicio',i:IC.home},{k:'clientes',l:'Clientes',i:IC.users},{k:'stock',l:'Stock',i:IC.pkg},{k:'planes',l:'Planes',i:IC.file},{k:'reparto',l:'Reparto',i:IC.truck},{k:'metricas',l:'Métricas',i:IC.chart},{k:'config',l:'Config',i:IC.settings}],repartidor:[{k:'home',l:'Inicio',i:IC.home},{k:'reparto',l:'Reparto',i:IC.truck},{k:'clientes',l:'Clientes',i:IC.users}],operador:[{k:'home',l:'Inicio',i:IC.home},{k:'stock',l:'Stock',i:IC.pkg}]};
+const VIEWS={home:HomeView,clientes:ClientsModule,stock:StockModule,planes:PlansModule,reparto:DeliveryModule,metricas:MetricsModule,config:ConfigModule};
 
 import { supabase } from '@/lib/supabase';
 
 export default function App({userEmail='', profile}){
   const[dark,setDark]=useState(false);
-  const handleLogout=async()=>{await supabase.auth.signOut();};const[role,setRole]=useState(profile?.role || 'admin');const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[showRP,setShowRP]=useState(false);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
+  const handleLogout=async()=>{await supabase.auth.signOut();};const role=profile?.role||'admin';const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
+  const[tenant,setTenant]=useState(null);
 
   // Cargar datos desde Supabase al iniciar
   useEffect(()=>{
     const load=async()=>{
       if(!profile?.tenant_id) return;
       const{data}=await supabase.from('user_data').select('*').eq('tenant_id', profile.tenant_id).single();
+      const{data:tData}=await supabase.from('tenants').select('*').eq('id', profile.tenant_id).single();
+      if(tData){
+        setTenant(tData);
+      }
       if(data){
         // Cargar datos guardados (arrays vacíos son válidos)
         setClients(Array.isArray(data.clients)?data.clients:[]);
@@ -2247,11 +2700,21 @@ export default function App({userEmail='', profile}){
       setTimeout(()=>setSaveStatus(''),4000);
     },500);
     return()=>clearTimeout(timer);
-  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps]);
-  const ctx=useMemo(()=>({role,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}),[role,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock,bottleSwaps]);
-  const V=VIEWS[view]||HomeView;const nav=NAV[role]||NAV.admin;
+  },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps,tenant]);
+  const ctx=useMemo(()=>({role,profile,tenant,setTenant,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}),[role,profile,tenant,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock,bottleSwaps]);
+  const getNav=()=>{
+    if(role==='admin')return NAV.admin;
+    if(role==='operador')return NAV.operador;
+    if(role==='repartidor'){
+      const base=[...NAV.repartidor];
+      if(tenant?.show_stock_driver)base.push({k:'stock',l:'Stock Central',i:IC.pkg});
+      return base;
+    }
+    return [];
+  };
+  const V=VIEWS[view]||HomeView;const nav=getNav();
   return(<AppContext.Provider value={ctx}><div className={dark?'dark':''}><div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
-    <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><button onClick={()=>setShowRP(!showRP)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'} ▾</button><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div>{showRP&&<div className="max-w-lg mx-auto px-4 pb-2"><div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">{[['admin','Admin'],['repartidor','Repartidor'],['operador','Operador']].map(([r,l])=>(<button key={r} onClick={()=>{setRole(r);setShowRP(false);setView('home');}} className={`flex-1 py-2 rounded-lg text-xs font-semibold transition ${role===r?'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm':'text-gray-500'}`}>{l}</button>))}</div></div>}</header>
+    <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex items-center justify-between px-4 h-14"><div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-sky-700 flex items-center justify-center shadow-sm shadow-sky-500/30"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 017 7c0 3-2 5.5-3 7H8c-1-1.5-3-4-3-7a7 7 0 017-7z"/><path d="M9 16v2a3 3 0 006 0v-2"/></svg></div><span className="font-extrabold text-gray-900 dark:text-gray-100 text-base tracking-tight">Carapachay</span></div><div className="flex items-center gap-1"><span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">{role==='admin'?'Admin':role==='repartidor'?'Repartidor':'Operador'}</span><button onClick={()=>setDark(!dark)} className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><I d={dark?IC.sun:IC.moon} size={18}/></button><button onClick={handleLogout} title={userEmail} className="p-2 rounded-lg text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div></div></header>
     <main className="max-w-lg mx-auto px-4 py-4 pb-24">{saveStatus&&<div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs font-bold shadow-lg transition-all ${saveStatus.includes('✅')?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{saveStatus}</div>}<V/></main>
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-t border-gray-200/80 dark:border-gray-800"><div className="max-w-lg mx-auto flex">{nav.map(n=>(<button key={n.k} onClick={()=>setView(n.k)} className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition ${view===n.k?'text-sky-600 dark:text-sky-400':'text-gray-400 dark:text-gray-500'}`}><I d={n.i} size={20}/><span className="text-[10px] font-semibold">{n.l}</span></button>))}</div></nav>
   </div></div></AppContext.Provider>);
