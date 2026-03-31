@@ -118,6 +118,45 @@ const BackBtn = ({onClick,label='Volver'})=>(<button onClick={onClick} className
 const StepBar = ({steps,current})=>(<div className="flex items-center gap-1.5 mb-4">{steps.map((s,i)=>(<div key={i} className="flex items-center gap-1.5 flex-1"><div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all ${i<current?'bg-emerald-500 text-white':i===current?'bg-sky-600 text-white ring-4 ring-sky-600/20':'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>{i<current?<I d={IC.check} size={13}/>:i+1}</div><span className={`text-[11px] font-semibold truncate ${i===current?'text-sky-600 dark:text-sky-400':i<current?'text-emerald-600':'text-gray-400'}`}>{s}</span>{i<steps.length-1&&<div className={`flex-1 h-0.5 rounded ${i<current?'bg-emerald-400':'bg-gray-200 dark:bg-gray-700'}`}/>}</div>))}</div>);
 const Modal = ({open,onClose,title,children})=>{if(!open)return null;return(<div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={e=>{e.stopPropagation();onClose();}} onTouchEnd={e=>e.stopPropagation()}><div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/><div onClick={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} className="relative w-full max-w-lg max-h-[90vh] bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 shrink-0"><h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"><I d={IC.x} size={20}/></button></div><div className="overflow-y-auto flex-1 p-4">{children}</div></div></div>);};
 
+// --- Mercado Pago ---
+const MercadoPagoQR = ({ title, price }) => {
+  const { tenant } = useApp();
+  const [link, setLink] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const generate = async () => {
+    setLoading(true); setError(''); setLink(null);
+    try {
+      if (!tenant?.mp_access_token) throw new Error('La Sodería no configuró Mercado Pago aún.');
+      const res = await fetch('/api/mp/create', { method: 'POST', body: JSON.stringify({ tenantId: tenant.id, title, price }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error MP');
+      setLink(data.init_point);
+    } catch(err) { setError(err.message); } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="bg-sky-50 dark:bg-sky-900/10 border border-sky-200 dark:border-sky-800 rounded-xl p-4 text-center space-y-3 mt-3 mb-3">
+      <h4 className="text-sm font-bold text-sky-700 dark:text-sky-400">Cobro con link de pago</h4>
+      {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+      {!link && !loading && (
+        <Btn v="primary" onClick={generate} size="sm" className="mx-auto flex items-center gap-1 bg-sky-600 hover:bg-sky-700 text-white shadow"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> Generar link de cobro ({fmt(price)})</Btn>
+      )}
+      {loading && <p className="text-xs text-sky-600 animate-pulse font-semibold">Generando link seguro...</p>}
+      {link && (
+        <div className="space-y-3 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+          <div className="bg-white p-2 rounded-xl shadow-md border border-gray-100">
+            <img src={`https://quickchart.io/qr?text=${encodeURIComponent(link)}&size=180&margin=0`} alt="QR Code" className="w-[180px] h-[180px]"/>
+          </div>
+          <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-400">Que el cliente escanee el código para pagar</p>
+          <a href={link} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-sky-600 hover:text-sky-700 underline shadow-sm bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg">abrir / compartir link de pago</a>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- Map ---
 const RouteMap = ({stops=[],depot=null,height=260,showRoute=true})=>{const mapRef=useRef(null);const mapInst=useRef(null);const markers=useRef([]);const poly=useRef(null);const[loaded,setLoaded]=useState(false);
   useEffect(()=>{if(typeof window==='undefined')return;if(window.L){setLoaded(true);return;}const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(css);const js=document.createElement('script');js.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';js.onload=()=>setLoaded(true);document.head.appendChild(js);},[]);
@@ -352,6 +391,9 @@ const ClientDetail = ({client,onBack}) => {
     setOrders(prev=>[order,...prev]);
     setOrderCounter(prev=>prev+1);
     if(!isFiadoDirecto){
+      if(payment?.amount>0 && payment?.method && payment.method!=='fiado'){
+        setPayments(prev=>[{id:Date.now()+1,clientId:client.id,clientName:client.name,amount:payment.amount,concept:`Pedido #${orderNum}`,method:payment.method,createdAt:Date.now(),receipt:payment?.receipt||null},...prev]);
+      }
       // Descontar stock de productos
       setProducts(prev=>prev.map(p=>{const it=orderItems.find(x=>x.productId===p.id);return it?{...p,stock:Math.max(0,p.stock-it.qty)}:p;}));
       // Descontar envases del depósito y sumar al cliente
@@ -446,6 +488,7 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
+        {fiadoPayMethod==='mercadopago'&&<MercadoPagoQR title={`Pago deuda ${client.name}`} price={(showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)} />}
         <div>
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Comprobante <span className="font-normal text-gray-400">(opcional)</span></p>
           {fiadoReceipt?(
@@ -495,6 +538,7 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
+        {partialPayMethod==='mercadopago'&&Number(partialPayAmount)>0&&<MercadoPagoQR title={`Pago parcial ${client.name}`} price={Number(partialPayAmount)} />}
         <div className="flex gap-2">
           <Btn v="secondary" onClick={()=>{setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1">Cancelar</Btn>
           <Btn v="primary" disabled={!partialPayMethod||!partialPayAmount||Number(partialPayAmount)<=0} onClick={()=>{
@@ -868,12 +912,7 @@ const NewOrderForm = ({client,onBack,onSave}) => {
         </div>)}
 
         {/* Mercado Pago */}
-        {pm==='mercadopago'&&(<div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-4 text-center space-y-3">
-          <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-800 flex items-center justify-center mx-auto"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg></div>
-          <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">Mercado Pago</p>
-          <p className="text-xs text-sky-600 dark:text-sky-500">Se generara un link de pago por {fmt(total)}</p>
-          <p className="text-[10px] text-gray-400">Proximamente: integracion con API de Mercado Pago para cobro con QR y link automatico</p>
-        </div>)}
+        {pm==='mercadopago'&& <MercadoPagoQR title={`Pedido ${client.name}`} price={Number(pa)||total} />}
 
         {/* Fiado warning */}
         {pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 dark:text-red-400 font-semibold">{fmt(total)} se suma a la deuda del cliente</p></div>}
@@ -2306,7 +2345,7 @@ const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients
       </button>
     </div>}
     {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4">{containerStock.length===0?<p className="text-xs text-gray-400 text-center py-2">Sin tipos de envases configurados</p>:containerStock.map(ct=><Qty key={ct.id} value={returned[ct.id]||0} onChange={v=>setReturned(p=>({...p,[ct.id]:v}))} label={ct.name}/>)}</Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(total));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
-    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(total));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
+    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(total));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&pm!=='mercadopago'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='mercadopago'&&<MercadoPagoQR title={`Reparto ${stop.clientName}`} price={Number(pa)||total} />}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
   </div>);
 };
 
@@ -2330,12 +2369,23 @@ const MetricsModule=()=>{
   };
   const[from,to]=getRange();
   const filtOrders=(orders||[]).filter(o=>o.createdAt>=from&&o.createdAt<=to);
-  const filtPayments=(payments||[]).filter(p=>(p.createdAt||p.date||0)>=from&&(p.createdAt||p.date||0)<=to);
+  const getPayTime=p=>{
+    if(p.createdAt)return p.createdAt;
+    if(p.date){
+      if(typeof p.date==='number')return p.date;
+      if(typeof p.date==='string'){
+        if(p.date.includes('/')) return new Date(p.date.split('/').reverse().join('-')+'T12:00:00').getTime();
+        return new Date(p.date).getTime();
+      }
+    }
+    return 0;
+  };
+  const filtPayments=(payments||[]).filter(p=>{const t=getPayTime(p);return t>=from&&t<=to;});
   const done=filtOrders.filter(o=>o.status==='entregado');
   const sales=done.reduce((s,o)=>s+o.total,0);
   const debtors=[...clients].filter(c=>c.balance<0).sort((a,b)=>a.balance-b.balance);
   const totalDebt=debtors.reduce((s,c)=>s+Math.abs(c.balance),0);
-  const byMethod=filtPayments.reduce((a,p)=>{a[p.method]=(a[p.method]||0)+(p.amount||0);return a;},{});
+  const byMethod=filtPayments.reduce((a,p)=>{a[p.method]=(a[p.method]||0)+(Number(p.amount)||0);return a;},{});
   const totalCollected=['efectivo','transferencia','mercadopago'].reduce((s,m)=>s+(byMethod[m]||0),0);
   const fiadoRecuperado=byMethod['fiado']||0;
   const productTotals={};
@@ -2394,6 +2444,9 @@ const ConfigModule = () => {
   const [depotAddressInput, setDepotAddressInput] = useState('');
   const [showStockDriver, setShowStockDriver] = useState(false);
   const [allowCreateRoute, setAllowCreateRoute] = useState(false);
+  const [mpAccessToken, setMpAccessToken] = useState('');
+  const [mpPublicKey, setMpPublicKey] = useState('');
+  const [mpSurchargePercent, setMpSurchargePercent] = useState('0');
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -2418,6 +2471,9 @@ const ConfigModule = () => {
       setDepotAddressInput(res.data.depot_address || '');
       setShowStockDriver(res.data.show_stock_driver || false);
       setAllowCreateRoute(res.data.allow_create_route || false);
+      setMpAccessToken(res.data.mp_access_token || '');
+      setMpPublicKey(res.data.mp_public_key || '');
+      setMpSurchargePercent(res.data.mp_surcharge_percent || '0');
     }
   }, [profile?.tenant_id]);
 
@@ -2452,11 +2508,11 @@ const ConfigModule = () => {
 
   const handleSaveTenant = async () => {
     setTenantLoading(true);
-    const res = await updateTenantInfo(profile.tenant_id, { name: tenantName, phone: tenantPhone, address: tenantAddress, depotLat, depotLng, depotAddress, showStockDriver, allowCreateRoute });
+    const res = await updateTenantInfo(profile.tenant_id, { name: tenantName, phone: tenantPhone, address: tenantAddress, depotLat, depotLng, depotAddress, showStockDriver, allowCreateRoute, mpAccessToken, mpPublicKey, mpSurchargePercent: Number(mpSurchargePercent||0) });
     setTenantLoading(false);
     if (res.success) {
       showToast('✅ Datos guardados');
-      setTenant(p=>({...p,show_stock_driver:showStockDriver,allow_create_route:allowCreateRoute}));
+      setTenant(p=>({...p,show_stock_driver:showStockDriver,allow_create_route:allowCreateRoute,mp_access_token:mpAccessToken,mp_public_key:mpPublicKey,mp_surcharge_percent:Number(mpSurchargePercent||0)}));
     } else showToast('❌ ' + res.error);
   };
 
@@ -2471,9 +2527,9 @@ const ConfigModule = () => {
     <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Configuración</h2>
 
     {/* TABS */}
-    <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-      {[['equipo','Equipo'],['soderia','Sodería'],['deposito','Depósito']].map(([k,l]) => (
-        <button key={k} onClick={() => setTab(k)} className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition ${tab===k ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{l}</button>
+    <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 overflow-x-auto">
+      {[['equipo','Equipo'],['soderia','Sodería'],['deposito','Depósito'],['mercadopago','Mercado Pago']].map(([k,l]) => (
+        <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap flex-1 py-2.5 px-3 rounded-lg text-xs font-semibold transition ${tab===k ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{l}</button>
       ))}
     </div>
 
@@ -2609,6 +2665,29 @@ const ConfigModule = () => {
       </Card>
 
       <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18}/>{tenantLoading ? 'Guardando...' : 'Guardar ubicación y permisos'}</Btn>
+    </div>}
+
+    {/* ===== TAB: MERCADO PAGO ===== */}
+    {tab === 'mercadopago' && <div className="space-y-4">
+      <Card className="!p-5 space-y-4">
+         <div className="flex items-center gap-3 mb-2"><div className="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Mercado Pago</h3><p className="text-xs text-gray-500">Credenciales de producción</p></div></div>
+         <div>
+           <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Access Token</label>
+           <input type="password" value={mpAccessToken} onChange={e => setMpAccessToken(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
+           <p className="text-[10px] text-gray-400 mt-1">El token de producción de tu cuenta de Mercado Pago (empieza con APP_USR). Lo encontrás en la web de desarrolladores de MP.</p>
+         </div>
+         <div>
+           <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Public Key <span className="text-gray-400 font-normal">(Opcional)</span></label>
+           <input type="text" value={mpPublicKey} onChange={e => setMpPublicKey(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
+         </div>
+         <div>
+           <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Recargo por MP (%)</label>
+           <div className="flex items-center gap-2"><input type="number" min="0" value={mpSurchargePercent} onChange={e => setMpSurchargePercent(e.target.value)} placeholder="0" className="w-24 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-blue-500/30"/><span className="text-sm font-bold text-gray-500">%</span></div>
+           <p className="text-[10px] text-gray-400 mt-1">Este porcentaje es cobrado al cliente automáticamente en QR o Links.</p>
+         </div>
+         {mpAccessToken && <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3"><p className="text-xs text-blue-700 dark:text-blue-400">✔️ Token configurado. Los repartidores podrán generar QRs de cobro.</p></div>}
+      </Card>
+      <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18}/>{tenantLoading ? 'Guardando...' : 'Guardar credenciales'}</Btn>
     </div>}
   </div>);
 };

@@ -136,6 +136,8 @@ export async function updateTenantInfo(tenantId, info) {
         depot_address: info.depotAddress,
         show_stock_driver: info.showStockDriver,
         allow_create_route: info.allowCreateRoute,
+        mp_access_token: info.mpAccessToken,
+        mp_public_key: info.mpPublicKey,
       })
       .eq('id', tenantId);
 
@@ -154,7 +156,7 @@ export async function getTenantInfo(tenantId) {
 
     const { data, error } = await supabaseAdmin
       .from('tenants')
-      .select('id, name, phone, address, depot_lat, depot_lng, depot_address, show_stock_driver, allow_create_route, owner_email, plan, status')
+      .select('id, name, phone, address, depot_lat, depot_lng, depot_address, show_stock_driver, allow_create_route, owner_email, plan, status, mp_access_token, mp_public_key')
       .eq('id', tenantId)
       .single();
 
