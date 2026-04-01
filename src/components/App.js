@@ -489,7 +489,7 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
-        {fiadoPayMethod==='mercadopago'&&<MercadoPagoQR title={`Pago deuda ${client.name}`} price={((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) + Math.round(((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) * Number(tenant?.mp_surcharge_percent||0)/100)} />}
+        {fiadoPayMethod==='mercadopago'&&tenant?.mp_qr_enabled&&<MercadoPagoQR title={`Pago deuda ${client.name}`} price={((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) + Math.round(((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) * Number(tenant?.mp_surcharge_percent||0)/100)} />}
         <div>
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Comprobante <span className="font-normal text-gray-400">(opcional)</span></p>
           {fiadoReceipt?(
@@ -542,7 +542,7 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
-        {partialPayMethod==='mercadopago'&&Number(partialPayAmount)>0&&<MercadoPagoQR title={`Pago parcial ${client.name}`} price={Number(partialPayAmount) + Math.round(Number(partialPayAmount)*Number(tenant?.mp_surcharge_percent||0)/100)} />}
+        {partialPayMethod==='mercadopago'&&tenant?.mp_qr_enabled&&Number(partialPayAmount)>0&&<MercadoPagoQR title={`Pago parcial ${client.name}`} price={Number(partialPayAmount) + Math.round(Number(partialPayAmount)*Number(tenant?.mp_surcharge_percent||0)/100)} />}
         {partialPayMethod==='mercadopago'&&Number(tenant?.mp_surcharge_percent||0)>0&&Number(partialPayAmount)>0&&<p className="text-xs text-blue-600 mt-1 pb-2">El cliente pagará en total {fmt(Number(partialPayAmount) + Math.round(Number(partialPayAmount)*Number(tenant?.mp_surcharge_percent||0)/100))} (incluye recargo MP)</p>}
         <div className="flex gap-2">
           <Btn v="secondary" onClick={()=>{setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1">Cancelar</Btn>
@@ -929,7 +929,7 @@ const NewOrderForm = ({client,onBack,onSave}) => {
         </div>)}
 
         {/* Mercado Pago */}
-        {pm==='mercadopago'&& <MercadoPagoQR title={`Pedido ${client.name}`} price={Number(pa)||total} />}
+        {pm==='mercadopago'&&tenant?.mp_qr_enabled&&<MercadoPagoQR title={`Pedido ${client.name}`} price={Number(pa)||total} />}
 
         {/* Fiado warning */}
         {pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 dark:text-red-400 font-semibold">{fmt(total)} se suma a la deuda del cliente</p></div>}
@@ -2366,7 +2366,7 @@ const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients
       </button>
     </div>}
     {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4">{containerStock.length===0?<p className="text-xs text-gray-400 text-center py-2">Sin tipos de envases configurados</p>:containerStock.map(ct=><Qty key={ct.id} value={returned[ct.id]||0} onChange={v=>setReturned(p=>({...p,[ct.id]:v}))} label={ct.name}/>)}</Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(baseTotal));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
-    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p>{pm==='mercadopago'&&surchargePct>0&&<p className="text-xs text-blue-600 mt-1">Incluye {fmt(surcharge)} de recargo</p>}</div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(baseTotal+(k==='mercadopago'?Math.round(baseTotal*surchargePct/100):0)));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&pm!=='mercadopago'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='mercadopago'&&<MercadoPagoQR title={`Reparto ${stop.clientName}`} price={Number(pa)||total} />}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
+    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p>{pm==='mercadopago'&&surchargePct>0&&<p className="text-xs text-blue-600 mt-1">Incluye {fmt(surcharge)} de recargo</p>}</div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(baseTotal+(k==='mercadopago'?Math.round(baseTotal*surchargePct/100):0)));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&pm!=='mercadopago'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='mercadopago'&&tenant?.mp_qr_enabled&&<MercadoPagoQR title={`Reparto ${stop.clientName}`} price={Number(pa)||total} />}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
   </div>);
 };
 
@@ -2468,6 +2468,7 @@ const ConfigModule = () => {
   const [mpAccessToken, setMpAccessToken] = useState('');
   const [mpPublicKey, setMpPublicKey] = useState('');
   const [mpSurchargePercent, setMpSurchargePercent] = useState('0');
+  const [mpQrEnabled, setMpQrEnabled] = useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -2495,6 +2496,7 @@ const ConfigModule = () => {
       setMpAccessToken(res.data.mp_access_token || '');
       setMpPublicKey(res.data.mp_public_key || '');
       setMpSurchargePercent(res.data.mp_surcharge_percent || '0');
+      setMpQrEnabled(res.data.mp_qr_enabled || false);
     }
   }, [profile?.tenant_id]);
 
@@ -2529,11 +2531,11 @@ const ConfigModule = () => {
 
   const handleSaveTenant = async () => {
     setTenantLoading(true);
-    const res = await updateTenantInfo(profile.tenant_id, { name: tenantName, phone: tenantPhone, address: tenantAddress, depotLat, depotLng, depotAddress, showStockDriver, allowCreateRoute, mpAccessToken, mpPublicKey, mpSurchargePercent: Number(mpSurchargePercent||0) });
+    const res = await updateTenantInfo(profile.tenant_id, { name: tenantName, phone: tenantPhone, address: tenantAddress, depotLat, depotLng, depotAddress, showStockDriver, allowCreateRoute, mpAccessToken, mpPublicKey, mpSurchargePercent: Number(mpSurchargePercent||0), mpQrEnabled });
     setTenantLoading(false);
     if (res.success) {
       showToast('✅ Datos guardados');
-      setTenant(p=>({...p,show_stock_driver:showStockDriver,allow_create_route:allowCreateRoute,mp_access_token:mpAccessToken,mp_public_key:mpPublicKey,mp_surcharge_percent:Number(mpSurchargePercent||0)}));
+      setTenant(p=>({...p,show_stock_driver:showStockDriver,allow_create_route:allowCreateRoute,mp_access_token:mpAccessToken,mp_public_key:mpPublicKey,mp_surcharge_percent:Number(mpSurchargePercent||0),mp_qr_enabled:mpQrEnabled}));
     } else showToast('❌ ' + res.error);
   };
 
@@ -2692,21 +2694,35 @@ const ConfigModule = () => {
     {tab === 'mercadopago' && <div className="space-y-4">
       <Card className="!p-5 space-y-4">
          <div className="flex items-center gap-3 mb-2"><div className="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div><div><h3 className="font-bold text-gray-900 dark:text-gray-100">Mercado Pago</h3><p className="text-xs text-gray-500">Credenciales de producción</p></div></div>
-         <div>
-           <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Access Token</label>
-           <input type="password" value={mpAccessToken} onChange={e => setMpAccessToken(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
-           <p className="text-[10px] text-gray-400 mt-1">El token de producción de tu cuenta de Mercado Pago (empieza con APP_USR). Lo encontrás en la web de desarrolladores de MP.</p>
+         
+         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+           <div>
+             <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Integración de Códigos QR</p>
+             <p className="text-xs text-gray-500 mt-0.5">Si se apaga, los cobradores no verán códigos automáticos pero el cobro se registrará igual.</p>
+           </div>
+           <button onClick={()=>setMpQrEnabled(!mpQrEnabled)} className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${mpQrEnabled?'bg-blue-500':'bg-gray-200 dark:bg-gray-700'}`}>
+             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${mpQrEnabled?'translate-x-5':'translate-x-0'}`}/>
+           </button>
          </div>
-         <div>
-           <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Public Key <span className="text-gray-400 font-normal">(Opcional)</span></label>
-           <input type="text" value={mpPublicKey} onChange={e => setMpPublicKey(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
-         </div>
+
+         {mpQrEnabled && <>
+           <div>
+             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Access Token</label>
+             <input type="password" value={mpAccessToken} onChange={e => setMpAccessToken(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
+             <p className="text-[10px] text-gray-400 mt-1">El token de tu cuenta de Mercado Pago (empieza con APP_USR). Lo encontrás en la web de MP.</p>
+           </div>
+           <div>
+             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Public Key <span className="text-gray-400 font-normal">(Opcional)</span></label>
+             <input type="text" value={mpPublicKey} onChange={e => setMpPublicKey(e.target.value)} placeholder="APP_USR-..." className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-mono"/>
+           </div>
+         </>}
+         
          <div>
            <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1">Recargo por MP (%)</label>
            <div className="flex items-center gap-2"><input type="number" min="0" value={mpSurchargePercent} onChange={e => setMpSurchargePercent(e.target.value)} placeholder="0" className="w-24 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-blue-500/30"/><span className="text-sm font-bold text-gray-500">%</span></div>
-           <p className="text-[10px] text-gray-400 mt-1">Este porcentaje es cobrado al cliente automáticamente en QR o Links.</p>
+           <p className="text-[10px] text-gray-400 mt-1">Este porcentaje es cobrado al cliente automáticamente si elije MP.</p>
          </div>
-         {mpAccessToken && <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3"><p className="text-xs text-blue-700 dark:text-blue-400">✔️ Token configurado. Los repartidores podrán generar QRs de cobro.</p></div>}
+         {mpQrEnabled && mpAccessToken && <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3"><p className="text-xs text-blue-700 dark:text-blue-400">✔️ Integración configurada. Los QRs se generarán al cobrar.</p></div>}
       </Card>
       <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18}/>{tenantLoading ? 'Guardando...' : 'Guardar credenciales'}</Btn>
     </div>}
