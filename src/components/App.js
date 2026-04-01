@@ -477,8 +477,9 @@ const ClientDetail = ({client,onBack}) => {
       <div className="space-y-4">
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-center">
           <p className="text-xs text-gray-400 mb-1">{(showPayFiado?.partialPayments?.length>0)?'Restante a cobrar':'Total a cobrar'}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fmt(((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) + (fiadoPayMethod==='mercadopago'?Math.round(((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) * Number(tenant?.mp_surcharge_percent||0)/100):0))}</p>
           {(showPayFiado?.partialPayments?.length>0)&&<p className="text-xs text-gray-400 mt-1">Total: {fmt(showPayFiado?.total)} — Ya pagado: {fmt((showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0))}</p>}
+          {fiadoPayMethod==='mercadopago'&&Number(tenant?.mp_surcharge_percent||0)>0&&<p className="text-xs text-blue-600 mt-1">Incluye recargo MP</p>}
         </div>
         <div>
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Método de pago</p>
@@ -488,7 +489,7 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
-        {fiadoPayMethod==='mercadopago'&&<MercadoPagoQR title={`Pago deuda ${client.name}`} price={(showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)} />}
+        {fiadoPayMethod==='mercadopago'&&<MercadoPagoQR title={`Pago deuda ${client.name}`} price={((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) + Math.round(((showPayFiado?.total||0)-(showPayFiado?.partialPayments||[]).reduce((s,p)=>s+p.amount,0)) * Number(tenant?.mp_surcharge_percent||0)/100)} />}
         <div>
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Comprobante <span className="font-normal text-gray-400">(opcional)</span></p>
           {fiadoReceipt?(
@@ -509,10 +510,13 @@ const ClientDetail = ({client,onBack}) => {
           <Btn v="success" disabled={!fiadoPayMethod} onClick={()=>{
             const o=showPayFiado;
             const alreadyPaid=(o.partialPayments||[]).reduce((s,p)=>s+p.amount,0);
-            const remaining=o.total-alreadyPaid;
-            setOrders(prev=>prev.map(x=>x.id===o.id?{...x,fiadoPaidMethod:fiadoPayMethod,paidAt:Date.now(),receipt:fiadoReceipt||null}:x));
-            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+remaining)}:c));
-            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:remaining,concept:`Pago fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
+            const baseRemaining=o.total-alreadyPaid;
+            const surcharge = fiadoPayMethod==='mercadopago'?Math.round(baseRemaining*Number(tenant?.mp_surcharge_percent||0)/100):0;
+            const remaining=baseRemaining + surcharge;
+            setOrders(prev=>prev.map(x=>x.id===o.id?{...x,fiadoPaidMethod:fiadoPayMethod,paidAt:Date.now(),receipt:fiadoReceipt||null, total: x.total+surcharge}:x));
+            setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+baseRemaining)}:c));
+            if(surcharge>0) setPayments(prev=>[{id:Date.now()+1,clientId:client.id,clientName:client.name,amount:surcharge,concept:`Recargo MP fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
+            setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:baseRemaining,concept:`Pago fiado #${o.orderNum}`,method:fiadoPayMethod,createdAt:Date.now(),receipt:fiadoReceipt||null},...prev]);
             setShowPayFiado(null);
           }} className="flex-1"><I d={IC.check} size={16}/>Confirmar pago</Btn>
         </div>
@@ -538,15 +542,18 @@ const ClientDetail = ({client,onBack}) => {
             ))}
           </div>
         </div>
-        {partialPayMethod==='mercadopago'&&Number(partialPayAmount)>0&&<MercadoPagoQR title={`Pago parcial ${client.name}`} price={Number(partialPayAmount)} />}
+        {partialPayMethod==='mercadopago'&&Number(partialPayAmount)>0&&<MercadoPagoQR title={`Pago parcial ${client.name}`} price={Number(partialPayAmount) + Math.round(Number(partialPayAmount)*Number(tenant?.mp_surcharge_percent||0)/100)} />}
+        {partialPayMethod==='mercadopago'&&Number(tenant?.mp_surcharge_percent||0)>0&&Number(partialPayAmount)>0&&<p className="text-xs text-blue-600 mt-1 pb-2">El cliente pagará en total {fmt(Number(partialPayAmount) + Math.round(Number(partialPayAmount)*Number(tenant?.mp_surcharge_percent||0)/100))} (incluye recargo MP)</p>}
         <div className="flex gap-2">
           <Btn v="secondary" onClick={()=>{setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);}} className="flex-1">Cancelar</Btn>
           <Btn v="primary" disabled={!partialPayMethod||!partialPayAmount||Number(partialPayAmount)<=0} onClick={()=>{
             const o=showPartialPayFiado;
             const amt=Number(partialPayAmount);
+            const surcharge = partialPayMethod==='mercadopago'?Math.round(amt*Number(tenant?.mp_surcharge_percent||0)/100):0;
             const partial={amount:amt,method:partialPayMethod,date:Date.now()};
             setOrders(prev=>prev.map(x=>x.id===o.id?{...x,partialPayments:[...(x.partialPayments||[]),partial]}:x));
             setClients(prev=>prev.map(c=>c.id===client.id?{...c,balance:Math.min(0,c.balance+amt)}:c));
+            if(surcharge>0) setPayments(prev=>[{id:Date.now()+1,clientId:client.id,clientName:client.name,amount:surcharge,concept:`Recargo MP parcial #${o.orderNum}`,method:partialPayMethod,createdAt:Date.now()},...prev]);
             setPayments(prev=>[{id:Date.now(),clientId:client.id,clientName:client.name,amount:amt,concept:`Pago parcial fiado #${o.orderNum}`,method:partialPayMethod,createdAt:Date.now()},...prev]);
             setShowPartialPayFiado(null);setPartialPayAmount('');setPartialPayMethod(null);
           }} className="flex-1"><I d={IC.money} size={16}/>Registrar pago</Btn>
@@ -808,7 +815,7 @@ const ClientDetail = ({client,onBack}) => {
   </div>);
 };
 const NewOrderForm = ({client,onBack,onSave}) => {
-  const {products}=useApp();
+  const {products, tenant}=useApp();
   const [step,setStep]=useState(0);
   const [items,setItems]=useState(products.filter(p=>p.price>0).map(p=>({...p,qty:0})));
   const [note,setNote]=useState('');
@@ -818,7 +825,11 @@ const NewOrderForm = ({client,onBack,onSave}) => {
   const [fiadoDirecto,setFiadoDirecto]=useState(false);
   const [fiadoAmount,setFiadoAmount]=useState('');
   const [fiadoConcept,setFiadoConcept]=useState('Fiado pendiente');
-  const total=items.reduce((s,it)=>s+it.price*it.qty,0);
+  
+  const surchargePct = Number(tenant?.mp_surcharge_percent||0);
+  const baseTotal=items.reduce((s,it)=>s+it.price*it.qty,0);
+  const surcharge = pm==='mercadopago' ? Math.round(baseTotal*surchargePct/100) : 0;
+  const total = baseTotal + surcharge;
   const hasItems=items.some(it=>it.qty>0);
   const fileRef=useRef(null);
 
@@ -830,8 +841,10 @@ const NewOrderForm = ({client,onBack,onSave}) => {
       return;
     }
     const paid=pm==='fiado'?0:(Number(pa)||total);
+    const finalItems = items.filter(it=>it.qty>0).map(it=>({productId:it.id,name:it.name,qty:it.qty,price:it.price,unit:it.unit}));
+    if(surcharge>0) finalItems.push({productId:'mp_surcharge',name:`Recargo MP (${surchargePct}%)`,qty:1,price:surcharge,unit:'un'});
     onSave(
-      items.filter(it=>it.qty>0).map(it=>({productId:it.id,name:it.name,qty:it.qty,price:it.price,unit:it.unit})),
+      finalItems,
       note,
       {method:pm,amount:paid,receipt:receipt?receipt.name:null}
     );
@@ -884,16 +897,20 @@ const NewOrderForm = ({client,onBack,onSave}) => {
         <div className="space-y-2">{items.filter(it=>it.price>0).map(it=>(<Card key={it.id} className="!p-3"><div className="flex items-center justify-between gap-2"><div className="flex-1 min-w-0"><p className="font-semibold text-sm text-gray-900 dark:text-gray-100">{it.name}</p><p className="text-xs text-gray-400">{fmt(it.price)} / {it.unit}</p></div><Qty value={it.qty} onChange={v=>setItems(p=>p.map(x=>x.id===it.id?{...x,qty:v}:x))}/></div></Card>))}</div>}
         <input placeholder="Nota (opcional)" value={note} onChange={e=>setNote(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>
         {hasItems&&<div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>}
-        <Btn v="primary" onClick={()=>{setStep(1);setPa(String(total));}} disabled={!hasItems} className="w-full" size="lg">Siguiente: Cobro</Btn>
+        <Btn v="primary" onClick={()=>{setStep(1);setPa(String(baseTotal));}} disabled={!hasItems} className="w-full" size="lg">Siguiente: Cobro</Btn>
       </>)}
 
       {step===1&&(<>
-        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total a cobrar</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p></div>
+        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center">
+          <span className="text-xs text-gray-400">Total a cobrar</span>
+          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1">{fmt(total)}</p>
+          {pm==='mercadopago'&&surchargePct>0&&<p className="text-xs text-blue-600 mt-1">Incluye {fmt(surcharge)} de recargo</p>}
+        </div>
 
         {/* Payment methods */}
         <div className="grid grid-cols-2 gap-2">
           {[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(
-            <button key={k} onClick={()=>{setPm(k);setPa(k==='fiado'?'0':String(total));}} className={'py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 '+(pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400')}>{l}</button>
+            <button key={k} onClick={()=>{setPm(k);setPa(k==='fiado'?'0':String(baseTotal+(k==='mercadopago'?Math.round(baseTotal*surchargePct/100):0)));}} className={'py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 '+(pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400')}>{l}</button>
           ))}
         </div>
 
@@ -2316,13 +2333,17 @@ const ActiveRoute = ()=>{const{activeRoute:ar,setActiveRoute,setPastRoutes,clien
   </div>);
 };
 
-const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients,setClients,products,containerStock,setContainerStock,orders,setOrders,setPayments,orderCounter,setOrderCounter}=useApp();const[step,setStep]=useState(0);const[items,setItems]=useState(products.filter(p=>p.price>0).map(p=>({...p,qty:0})));const[returned,setReturned]=useState({});const[pm,sPm]=useState(null);const[pa,sPa]=useState('');
-  const total=items.reduce((s,it)=>s+it.price*it.qty,0);
+const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients,setClients,products,containerStock,setContainerStock,orders,setOrders,setPayments,orderCounter,setOrderCounter,tenant}=useApp();const[step,setStep]=useState(0);const[items,setItems]=useState(products.filter(p=>p.price>0).map(p=>({...p,qty:0})));const[returned,setReturned]=useState({});const[pm,sPm]=useState(null);const[pa,sPa]=useState('');
+  const surchargePct=Number(tenant?.mp_surcharge_percent||0);
+  const baseTotal=items.reduce((s,it)=>s+it.price*it.qty,0);
+  const surcharge=pm==='mercadopago'?Math.round(baseTotal*surchargePct/100):0;
+  const total=baseTotal+surcharge;
   const confirm=()=>{
     const paid=pm==='fiado'?0:(Number(pa)||total);const rem=total-paid;
-    const deliveredItems=items.filter(it=>it.qty>0);
+    const deliveredItems=items.filter(it=>it.qty>0).map(it=>({productId:it.id,qty:it.qty,name:it.name,price:it.price}));
+    if(surcharge>0) deliveredItems.push({productId:'mp_surcharge',qty:1,name:`Recargo MP (${surchargePct}%)`,price:surcharge});
     const outByContainer={};
-    deliveredItems.forEach(it=>{const p=products.find(x=>x.id===it.id);if(p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
+    items.filter(it=>it.qty>0).forEach(it=>{const p=products.find(x=>x.id===it.id);if(p?.containerType){outByContainer[p.containerType]=(outByContainer[p.containerType]||0)+it.qty;}});
     const now=Date.now();
     const orderNum=String(orderCounter).padStart(4,'0');
     const newOrder={id:now,orderNum,clientId:stop.clientId,clientName:stop.clientName,items:deliveredItems.map(it=>({productId:it.id,qty:it.qty,name:it.name,price:it.price})),total,payment:{method:pm,amount:paid},status:'entregado',createdAt:now,fromRoute:true};
@@ -2344,8 +2365,8 @@ const StopDetail = ({stop,onBack})=>{const{activeRoute:ar,setActiveRoute,clients
         <I d={IC.alert} size={16}/>No estaba en el domicilio
       </button>
     </div>}
-    {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4">{containerStock.length===0?<p className="text-xs text-gray-400 text-center py-2">Sin tipos de envases configurados</p>:containerStock.map(ct=><Qty key={ct.id} value={returned[ct.id]||0} onChange={v=>setReturned(p=>({...p,[ct.id]:v}))} label={ct.name}/>)}</Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(total));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
-    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p></div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(total));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&pm!=='mercadopago'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='mercadopago'&&<MercadoPagoQR title={`Reparto ${stop.clientName}`} price={Number(pa)||total} />}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
+    {step===1&&<div className="space-y-4"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Envases que retirás</h3><Card className="!p-4 space-y-4">{containerStock.length===0?<p className="text-xs text-gray-400 text-center py-2">Sin tipos de envases configurados</p>:containerStock.map(ct=><Qty key={ct.id} value={returned[ct.id]||0} onChange={v=>setReturned(p=>({...p,[ct.id]:v}))} label={ct.name}/>)}</Card><div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(0)} className="flex-1">Atrás</Btn><Btn v="primary" onClick={()=>{setStep(2);sPa(String(baseTotal));}} className="flex-1">Siguiente: Cobro</Btn></div></div>}
+    {step===2&&<div className="space-y-4"><div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center"><span className="text-xs text-gray-400">Total</span><p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</p>{pm==='mercadopago'&&surchargePct>0&&<p className="text-xs text-blue-600 mt-1">Incluye {fmt(surcharge)} de recargo</p>}</div><div className="grid grid-cols-2 gap-2">{[['efectivo','Efectivo'],['transferencia','Transferencia'],['mercadopago','Mercado Pago'],['fiado','Fiado']].map(([k,l])=>(<button key={k} onClick={()=>{sPm(k);sPa(k==='fiado'?'0':String(baseTotal+(k==='mercadopago'?Math.round(baseTotal*surchargePct/100):0)));}} className={`py-3.5 px-3 rounded-xl text-sm font-semibold border-2 transition-all active:scale-95 ${pm===k?(k==='fiado'?'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400':'border-sky-500 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400'):'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{l}</button>))}</div>{pm&&pm!=='fiado'&&pm!=='mercadopago'&&<div><label className="text-xs text-gray-500">Monto</label><input type="number" value={pa} onChange={e=>sPa(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-lg font-bold mt-1 focus:outline-none focus:ring-2 focus:ring-sky-500/30"/>{Number(pa)<total&&Number(pa)>0&&<p className="text-xs text-amber-600 mt-1">Diferencia {fmt(total-Number(pa))} → fiado</p>}</div>}{pm==='mercadopago'&&<MercadoPagoQR title={`Reparto ${stop.clientName}`} price={Number(pa)||total} />}{pm==='fiado'&&<div className="bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800 rounded-xl p-3"><p className="text-xs text-red-600 font-semibold">{fmt(total)} se suma a la deuda</p></div>}<div className="flex gap-2"><Btn v="secondary" onClick={()=>setStep(1)} className="flex-1">Atrás</Btn><Btn v="success" onClick={confirm} disabled={!pm||!total} className="flex-1" size="lg"><I d={IC.check} size={18}/>Confirmar</Btn></div></div>}
   </div>);
 };
 

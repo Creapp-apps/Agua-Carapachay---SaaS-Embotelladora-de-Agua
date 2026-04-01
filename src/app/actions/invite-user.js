@@ -138,6 +138,7 @@ export async function updateTenantInfo(tenantId, info) {
         allow_create_route: info.allowCreateRoute,
         mp_access_token: info.mpAccessToken,
         mp_public_key: info.mpPublicKey,
+        mp_surcharge_percent: Number(info.mpSurchargePercent || 0),
       })
       .eq('id', tenantId);
 
@@ -156,7 +157,7 @@ export async function getTenantInfo(tenantId) {
 
     const { data, error } = await supabaseAdmin
       .from('tenants')
-      .select('id, name, phone, address, depot_lat, depot_lng, depot_address, show_stock_driver, allow_create_route, owner_email, plan, status, mp_access_token, mp_public_key')
+      .select('id, name, phone, address, depot_lat, depot_lng, depot_address, show_stock_driver, allow_create_route, owner_email, plan, status, mp_access_token, mp_public_key, mp_surcharge_percent')
       .eq('id', tenantId)
       .single();
 
