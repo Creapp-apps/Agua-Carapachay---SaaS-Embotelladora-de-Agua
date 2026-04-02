@@ -136,6 +136,15 @@ const MercadoPagoQR = ({ title, price }) => {
     } catch(err) { setError(err.message); } finally { setLoading(false); }
   };
 
+  if (!tenant?.mp_access_token) {
+    return (
+      <div className="bg-sky-50 dark:bg-sky-900/10 border border-sky-200 dark:border-sky-800 rounded-xl p-3 text-center mt-3 mb-3">
+        <p className="text-xs text-sky-700 dark:text-sky-400 font-semibold">Solo registro (Mercado Pago)</p>
+        <p className="text-[10px] text-sky-600 mt-1">Podés confirmar el cobro normalmente. La cuenta aún no fue vinculada para generar links de pago automáticos.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-sky-50 dark:bg-sky-900/10 border border-sky-200 dark:border-sky-800 rounded-xl p-4 text-center space-y-3 mt-3 mb-3">
       <h4 className="text-sm font-bold text-sky-700 dark:text-sky-400">Cobro con link de pago</h4>
