@@ -2813,18 +2813,9 @@ export default function App({userEmail='', profile}){
           return;
         }
 
-        const {data:existingRows}=await supabase.from('user_data').select('user_id, clients').eq('tenant_id', profile.tenant_id).order('updated_at',{ascending:false}).limit(1);
+        const {data:existingRows}=await supabase.from('user_data').select('user_id').eq('tenant_id', profile.tenant_id).order('updated_at',{ascending:false}).limit(1);
         const saveId = (existingRows && existingRows.length > 0) ? existingRows[0].user_id : user.id;
-
-        // ═══ BACKUP: Si la fila existente tiene datos, guardar backup antes de pisar ═══
-        const existingClients = existingRows?.[0]?.clients;
-        if(Array.isArray(existingClients) && existingClients.length > 0){
-          await supabase.from('user_data_backups').upsert({
-            tenant_id: profile.tenant_id,
-            clients: existingClients,
-            backed_up_at: new Date().toISOString(),
-          },{onConflict:'tenant_id'}).then(()=>{}).catch(()=>{});
-        }
+        // Backup automático lo maneja el trigger de PostgreSQL (trg_backup_user_data)
 
         const payload={
           user_id:saveId,
