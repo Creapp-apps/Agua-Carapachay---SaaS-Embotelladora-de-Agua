@@ -2756,19 +2756,23 @@ export default function App({userEmail='', profile}){
   const handleLogout=async()=>{await supabase.auth.signOut();};const role=profile?.role||'admin';const[view,setView]=useState('home');const[clients,setClients]=useState([]);const[products,setProducts]=useState([]);const[activeRoute,setActiveRoute]=useState(null);const[pendingRoutes,setPendingRoutes]=useState([]);const[routeCounter,setRouteCounter]=useState(1);const[pastRoutes,setPastRoutes]=useState([]);const[orders,setOrders]=useState([]);const[orderCounter,setOrderCounter]=useState(1);const[plans,setPlans]=useState([]);const[clientPlans,setClientPlans]=useState([]);const[payments,setPayments]=useState([]);const[containerStock,setContainerStock]=useState([]);const[bottleSwaps,setBottleSwaps]=useState([]);
   const[dbLoaded,setDbLoaded]=useState(false);
   const[tenant,setTenant]=useState(null);
+  const loadedCountRef=useRef(0); // ANTI-WIPE: cuántos clientes se cargaron de Supabase
 
   // Cargar datos desde Supabase al iniciar
   useEffect(()=>{
     const load=async()=>{
       if(!profile?.tenant_id) return;
-      const{data}=await supabase.from('user_data').select('*').eq('tenant_id', profile.tenant_id).single();
+      const{data:rows,error:loadErr}=await supabase.from('user_data').select('*').eq('tenant_id', profile.tenant_id).order('updated_at',{ascending:false}).limit(1);
+      const data = rows && rows.length > 0 ? rows[0] : null;
+      if(loadErr) console.error('[LOAD] user_data error:', loadErr);
       const{data:tData}=await supabase.from('tenants').select('*').eq('id', profile.tenant_id).single();
       if(tData){
         setTenant(tData);
       }
       if(data){
-        // Cargar datos guardados (arrays vacíos son válidos)
-        setClients(Array.isArray(data.clients)?data.clients:[]);
+        const loadedClients = Array.isArray(data.clients)?data.clients:[];
+        loadedCountRef.current = loadedClients.length; // Recordar cuántos había
+        setClients(loadedClients);
         setProducts(Array.isArray(data.products)?data.products:[]);
         setOrders(Array.isArray(data.orders)?data.orders:[]);
         setPlans(Array.isArray(data.plans)?data.plans:[]);
@@ -2781,7 +2785,8 @@ export default function App({userEmail='', profile}){
         setContainerStock(Array.isArray(data.container_stock)?data.container_stock:[]);
         setBottleSwaps(Array.isArray(data.bottle_swaps)?data.bottle_swaps:[]);
       } else {
-        // Primer uso: cargar datos iniciales de ejemplo
+        console.warn('[LOAD] No user_data found for tenant, initializing empty.');
+        loadedCountRef.current = 0;
         setClients(INITIAL_CLIENTS);
         setProducts(INITIAL_PRODUCTS);
       }
@@ -2790,7 +2795,7 @@ export default function App({userEmail='', profile}){
     load();
   },[profile]);
 
-  // Guardar en Supabase cuando cambia algo (debounce 500ms)
+  // Guardar en Supabase cuando cambia algo (debounce 2s)
   const[saveStatus,setSaveStatus]=useState('');
   useEffect(()=>{
     if(!dbLoaded || !profile?.tenant_id)return;
@@ -2798,13 +2803,31 @@ export default function App({userEmail='', profile}){
       try{
         const{data:{user}}=await supabase.auth.getUser();
         if(!user){setSaveStatus('❌ Sin usuario');return;}
-        
-        // Verificamos si la fila existe (por si es el primer guardado del tenant)
-        const check = await supabase.from('user_data').select('user_id').eq('tenant_id', profile.tenant_id).single();
-        const saveId = check.data ? check.data.user_id : user.id;
+
+        // ═══ ANTI-WIPE PROTECTION ═══
+        // Si al cargar había datos y ahora hay 0, BLOQUEAR el guardado.
+        if(loadedCountRef.current > 0 && clients.length === 0){
+          console.error('[SAVE] 🛑 ANTI-WIPE: Se bloqueó un guardado que borraría todos los clientes. Loaded:', loadedCountRef.current, 'Current:', clients.length);
+          setSaveStatus('🛑 Guardado bloqueado (protección anti-borrado)');
+          setTimeout(()=>setSaveStatus(''),6000);
+          return;
+        }
+
+        const {data:existingRows}=await supabase.from('user_data').select('user_id, clients').eq('tenant_id', profile.tenant_id).order('updated_at',{ascending:false}).limit(1);
+        const saveId = (existingRows && existingRows.length > 0) ? existingRows[0].user_id : user.id;
+
+        // ═══ BACKUP: Si la fila existente tiene datos, guardar backup antes de pisar ═══
+        const existingClients = existingRows?.[0]?.clients;
+        if(Array.isArray(existingClients) && existingClients.length > 0){
+          await supabase.from('user_data_backups').upsert({
+            tenant_id: profile.tenant_id,
+            clients: existingClients,
+            backed_up_at: new Date().toISOString(),
+          },{onConflict:'tenant_id'}).then(()=>{}).catch(()=>{});
+        }
 
         const payload={
-          user_id:saveId, // Mantenemos el user_id original (dueño) de esa fila
+          user_id:saveId,
           tenant_id:profile.tenant_id,
           clients,products,orders,plans,payments,container_stock:containerStock,bottle_swaps:bottleSwaps,
           client_plans:clientPlans,
@@ -2814,16 +2837,23 @@ export default function App({userEmail='', profile}){
           route_counter:routeCounter,
           updated_at:new Date().toISOString(),
         };
-        const{error}=await supabase.from('user_data').upsert(payload,{onConflict:'user_id'});
+        const{error}=await supabase.from('user_data').upsert(payload,{onConflict:'tenant_id'});
         if(error){
-          console.error('[SAVE] error:', error);
-          setSaveStatus('❌ '+error.message);
+          const{error:err2}=await supabase.from('user_data').update({...payload}).eq('tenant_id',profile.tenant_id);
+          if(err2){
+            console.error('[SAVE] error:', err2);
+            setSaveStatus('❌ '+err2.message);
+          } else {
+            setSaveStatus('✅ Guardado');
+            loadedCountRef.current = clients.length; // Actualizar referencia
+          }
         } else {
           setSaveStatus('✅ Guardado');
+          loadedCountRef.current = clients.length; // Actualizar referencia
         }
       }catch(e){console.error('[SAVE] exception:',e);setSaveStatus('❌ '+e.message);}
       setTimeout(()=>setSaveStatus(''),4000);
-    },500);
+    },2000);
     return()=>clearTimeout(timer);
   },[dbLoaded,clients,products,orders,plans,payments,clientPlans,pendingRoutes,pastRoutes,orderCounter,routeCounter,containerStock,bottleSwaps,tenant]);
   const ctx=useMemo(()=>({role,profile,tenant,setTenant,view,setView,clients,setClients,products,setProducts,activeRoute,setActiveRoute,pendingRoutes,setPendingRoutes,routeCounter,setRouteCounter,pastRoutes,setPastRoutes,orders,setOrders,orderCounter,setOrderCounter,plans,setPlans,clientPlans,setClientPlans,payments,setPayments,containerStock,setContainerStock,bottleSwaps,setBottleSwaps}),[role,profile,tenant,view,clients,products,activeRoute,pendingRoutes,routeCounter,pastRoutes,orders,orderCounter,plans,clientPlans,payments,containerStock,bottleSwaps]);
