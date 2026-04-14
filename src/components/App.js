@@ -2452,7 +2452,34 @@ const ExportarTab = () => {
   const [showConfirm, setShowConfirm] = useState(null);
   const [cloudBackups, setCloudBackups] = useState([]);
   const [loadingCloud, setLoadingCloud] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
   const fileRef = useRef(null);
+
+  // ── Manual cloud backup ──
+  const manualBackup = async () => {
+    if (!profile?.tenant_id) return;
+    setBackupLoading(true);
+    try {
+      const now = new Date();
+      const backupData = JSON.stringify({ clients, products, orders, plans, payments, pastRoutes, pendingRoutes, containerStock, clientPlans, bottleSwaps, exportedAt: now.toISOString() });
+      const ts = now.toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+      const fileName = `backup_${ts}.json`;
+      const { error: upErr } = await supabase.storage.from('backups').upload(`${profile.tenant_id}/${fileName}`, new Blob([backupData], { type: 'application/json' }), { upsert: true });
+      if (upErr) { setRestoreMsg('❌ Error: ' + upErr.message); }
+      else {
+        // Rotación: mantener max 10
+        const { data: files } = await supabase.storage.from('backups').list(profile.tenant_id, { sortBy: { column: 'created_at', order: 'asc' } });
+        if (files && files.length > 10) {
+          const toDelete = files.slice(0, files.length - 10).map(f => `${profile.tenant_id}/${f.name}`);
+          await supabase.storage.from('backups').remove(toDelete);
+        }
+        setRestoreMsg('✅ Backup guardado en la nube');
+        loadCloudBackups();
+      }
+    } catch (e) { setRestoreMsg('❌ ' + e.message); }
+    setBackupLoading(false);
+    setTimeout(() => setRestoreMsg(''), 4000);
+  };
 
   // ── Export JSON ──
   const exportJSON = () => {
@@ -2537,6 +2564,13 @@ const ExportarTab = () => {
           <Btn v="primary" onClick={exportJSON} className="flex-1" size="sm">Descargar JSON</Btn>
           <Btn v="secondary" onClick={exportAll} className="flex-1" size="sm">Descargar CSVs</Btn>
         </div>
+      </Card>
+
+      {/* Manual cloud backup */}
+      <Card>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Guardar backup en la nube</h3>
+        <p className="text-xs text-gray-400 mb-3">Creá un punto de restauración ahora mismo. Se guarda en Supabase Storage (máximo 10 backups).</p>
+        <Btn v="success" onClick={manualBackup} disabled={backupLoading} className="w-full" size="sm">{backupLoading ? 'Guardando...' : <><I d={IC.save} size={16} />Crear backup ahora</>}</Btn>
       </Card>
 
       {/* Restore from file */}
