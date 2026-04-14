@@ -2445,6 +2445,164 @@ const MetricsModule = () => {
    ============================================================ */
 import { inviteUser, updateUserProfile, removeUser, getTeamMembers, updateTenantInfo, getTenantInfo } from '@/app/actions/invite-user';
 
+/* ── ExportarTab: backup, restore, cloud backups ── */
+const ExportarTab = () => {
+  const { clients, setClients, products, setProducts, orders, setOrders, plans, setPlans, payments, setPayments, pastRoutes, setPastRoutes, pendingRoutes, setPendingRoutes, containerStock, setContainerStock, clientPlans, setClientPlans, bottleSwaps, setBottleSwaps, profile } = useApp();
+  const [restoreMsg, setRestoreMsg] = useState('');
+  const [showConfirm, setShowConfirm] = useState(null);
+  const [cloudBackups, setCloudBackups] = useState([]);
+  const [loadingCloud, setLoadingCloud] = useState(false);
+  const fileRef = useRef(null);
+
+  // ── Export JSON ──
+  const exportJSON = () => {
+    const data = { clients, products, orders, plans, payments, pastRoutes, pendingRoutes, containerStock, clientPlans, bottleSwaps, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `carapachay_backup_${new Date().toISOString().slice(0, 10)}.json`; a.click(); URL.revokeObjectURL(url);
+  };
+  const exportCSVFn = (name, headers, rows) => {
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${name}_${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+  const exportAll = () => {
+    exportCSVFn('clientes', ['nombre', 'telefono', 'direccion', 'zona', 'tipo', 'saldo'], clients.filter(c => !c.deleted).map(c => [c.name, c.phone, c.address, c.zone, c.type, c.balance || 0]));
+    setTimeout(() => exportCSVFn('productos', ['nombre', 'precio', 'stock'], products.filter(p => !p.deleted).map(p => [p.name, p.price, p.stock])), 300);
+    setTimeout(() => exportCSVFn('pedidos', ['numero', 'cliente', 'total', 'metodo', 'fecha'], orders.map(o => [o.orderNum, o.clientName, o.total, o.payment?.method || '', new Date(o.createdAt).toLocaleDateString('es-AR')])), 600);
+  };
+
+  // ── Restore from JSON file ──
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.clients && !data.products) { setRestoreMsg('❌ Archivo inválido: no contiene datos reconocibles'); setTimeout(() => setRestoreMsg(''), 4000); return; }
+        setShowConfirm(data);
+      } catch { setRestoreMsg('❌ Error al leer el archivo JSON'); setTimeout(() => setRestoreMsg(''), 4000); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const applyRestore = (data) => {
+    if (Array.isArray(data.clients)) setClients(data.clients);
+    if (Array.isArray(data.products)) setProducts(data.products);
+    if (Array.isArray(data.orders)) setOrders(data.orders);
+    if (Array.isArray(data.plans)) setPlans(data.plans);
+    if (Array.isArray(data.payments)) setPayments(data.payments);
+    if (Array.isArray(data.pastRoutes)) setPastRoutes(data.pastRoutes);
+    if (Array.isArray(data.pendingRoutes)) setPendingRoutes(data.pendingRoutes);
+    if (Array.isArray(data.containerStock)) setContainerStock(data.containerStock);
+    if (Array.isArray(data.clientPlans)) setClientPlans(data.clientPlans);
+    if (Array.isArray(data.bottleSwaps)) setBottleSwaps(data.bottleSwaps);
+    setShowConfirm(null);
+    setRestoreMsg('✅ Datos restaurados correctamente');
+    setTimeout(() => setRestoreMsg(''), 4000);
+  };
+
+  // ── Cloud backups from Supabase Storage ──
+  const loadCloudBackups = useCallback(async () => {
+    if (!profile?.tenant_id) return;
+    setLoadingCloud(true);
+    const { data, error } = await supabase.storage.from('backups').list(profile.tenant_id, { limit: 10, sortBy: { column: 'created_at', order: 'desc' } });
+    if (!error && data) setCloudBackups(data.filter(f => f.name.endsWith('.json')));
+    setLoadingCloud(false);
+  }, [profile?.tenant_id]);
+
+  useEffect(() => { loadCloudBackups(); }, [loadCloudBackups]);
+
+  const restoreFromCloud = async (fileName) => {
+    const { data, error } = await supabase.storage.from('backups').download(`${profile.tenant_id}/${fileName}`);
+    if (error) { setRestoreMsg('❌ Error al descargar: ' + error.message); setTimeout(() => setRestoreMsg(''), 4000); return; }
+    const text = await data.text();
+    try {
+      const parsed = JSON.parse(text);
+      setShowConfirm(parsed);
+    } catch { setRestoreMsg('❌ Backup corrupto'); setTimeout(() => setRestoreMsg(''), 4000); }
+  };
+
+  return (
+    <div className="space-y-3">
+      {restoreMsg && <div className={`text-xs font-bold px-4 py-2 rounded-xl text-center ${restoreMsg.includes('✅') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{restoreMsg}</div>}
+
+      {/* Export */}
+      <Card>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Descargar backup</h3>
+        <p className="text-xs text-gray-400 mb-3">Descargá toda tu información. Incluye clientes, productos, pedidos, pagos, rutas y planes.</p>
+        <div className="flex gap-2">
+          <Btn v="primary" onClick={exportJSON} className="flex-1" size="sm">Descargar JSON</Btn>
+          <Btn v="secondary" onClick={exportAll} className="flex-1" size="sm">Descargar CSVs</Btn>
+        </div>
+      </Card>
+
+      {/* Restore from file */}
+      <Card>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Restaurar desde archivo</h3>
+        <p className="text-xs text-gray-400 mb-3">Seleccioná un archivo JSON de backup descargado anteriormente para restaurar tus datos.</p>
+        <input ref={fileRef} type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
+        <Btn v="outline" onClick={() => fileRef.current?.click()} className="w-full" size="sm"><I d={IC.file} size={16} />Seleccionar archivo JSON</Btn>
+      </Card>
+
+      {/* Cloud backups */}
+      <Card>
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Backups en la nube</h3>
+          <button onClick={loadCloudBackups} className="text-xs text-sky-600 font-semibold">Actualizar</button>
+        </div>
+        {loadingCloud ? <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" /></div> :
+          cloudBackups.length === 0 ? <p className="text-xs text-gray-400 text-center py-3">No hay backups en la nube todavía. Se generan automáticamente cada día.</p> :
+            <div className="space-y-1.5">{cloudBackups.map(b => (
+              <div key={b.name} className="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">{b.name.replace('.json', '').replace(/_/g, ' ')}</p>
+                  <p className="text-[10px] text-gray-400">{new Date(b.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                <button onClick={() => restoreFromCloud(b.name)} className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-sky-600 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 transition">Restaurar</button>
+              </div>
+            ))}</div>}
+      </Card>
+
+      {/* Data summary */}
+      <Card>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Resumen de datos</h3>
+        <div className="space-y-1.5">
+          {[['Clientes', clients.filter(c => !c.deleted).length], ['Productos', products.filter(p => !p.deleted).length], ['Pedidos', orders.length], ['Pagos', payments.length], ['Rutas', pastRoutes.length], ['Planes', plans.length]].map(([l, v]) => (
+            <div key={l} className="flex justify-between text-xs"><span className="text-gray-500">{l}</span><span className="font-bold text-gray-900 dark:text-gray-100">{v}</span></div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="bg-sky-50 dark:bg-sky-900/15 border border-sky-200 dark:border-sky-800 rounded-xl p-3">
+        <p className="text-xs text-sky-700 dark:text-sky-400 font-semibold">🛡️ Protección activa</p>
+        <p className="text-xs text-sky-600 mt-1">Se guardan automáticamente backups diarios en Supabase Storage. Podés restaurar desde la nube o desde un archivo descargado previamente.</p>
+      </div>
+
+      {/* Confirm restore modal */}
+      <Modal open={!!showConfirm} onClose={() => setShowConfirm(null)} title="Confirmar restauración">
+        <div className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+            <p className="text-xs text-amber-700 font-semibold">⚠️ Esta acción reemplazará TODOS tus datos actuales con los del backup.</p>
+          </div>
+          {showConfirm && <div className="space-y-1">
+            {[['Clientes', showConfirm.clients?.length || 0], ['Productos', showConfirm.products?.length || 0], ['Pedidos', showConfirm.orders?.length || 0], ['Pagos', showConfirm.payments?.length || 0]].map(([l, v]) => (
+              <div key={l} className="flex justify-between text-xs"><span className="text-gray-500">{l} en el backup</span><span className="font-bold">{v}</span></div>
+            ))}
+            {showConfirm.exportedAt && <p className="text-[10px] text-gray-400 mt-1">Generado: {new Date(showConfirm.exportedAt).toLocaleString('es-AR')}</p>}
+          </div>}
+          <div className="flex gap-2">
+            <Btn v="secondary" onClick={() => setShowConfirm(null)} className="flex-1">Cancelar</Btn>
+            <Btn v="danger" onClick={() => applyRestore(showConfirm)} className="flex-1"><I d={IC.alert} size={16} />Restaurar</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
 const ConfigModule = () => {
   const { clients, setClients, products, setProducts, orders, plans, payments, pastRoutes, pendingRoutes, containerStock, clientPlans, bottleSwaps } = useApp();
   const { role, profile, setTenant } = useApp();
@@ -2763,28 +2921,7 @@ const ConfigModule = () => {
       <Btn v="primary" onClick={handleSaveTenant} disabled={tenantLoading} className="w-full" size="lg"><I d={IC.save} size={18} />{tenantLoading ? 'Guardando...' : 'Guardar credenciales'}</Btn>
     </div>}
     {/* ===== TAB: EXPORTAR ===== */}
-    {tab === 'exportar' && <div className="space-y-3">
-      <Card>
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Backup completo</h3>
-        <p className="text-xs text-gray-400 mb-3">Descargá toda tu información en un archivo. Incluye clientes, productos, pedidos, pagos, rutas y planes.</p>
-        <div className="flex gap-2">
-          <Btn v="primary" onClick={exportJSON} className="flex-1" size="sm">Descargar JSON</Btn>
-          <Btn v="secondary" onClick={exportAll} className="flex-1" size="sm">Descargar CSVs</Btn>
-        </div>
-      </Card>
-      <Card>
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Resumen de datos</h3>
-        <div className="space-y-1.5">
-          {[['Clientes', clients.filter(c => !c.deleted).length], ['Productos', products.filter(p => !p.deleted).length], ['Pedidos', orders.length], ['Pagos', payments.length], ['Rutas realizadas', pastRoutes.length], ['Planes', plans.length]].map(([l, v]) => (
-            <div key={l} className="flex justify-between text-xs"><span className="text-gray-500">{l}</span><span className="font-bold text-gray-900 dark:text-gray-100">{v}</span></div>
-          ))}
-        </div>
-      </Card>
-      <div className="bg-sky-50 dark:bg-sky-900/15 border border-sky-200 dark:border-sky-800 rounded-xl p-3">
-        <p className="text-xs text-sky-700 dark:text-sky-400 font-semibold">🛡️ Protección activa</p>
-        <p className="text-xs text-sky-600 mt-1">Se guardan automáticamente los últimos 10 backups de tus datos en la nube. Ante cualquier incidente, contactá al soporte para restaurar.</p>
-      </div>
-    </div>}
+    {tab === 'exportar' && <ExportarTab />}
   </div>);
 };
 
@@ -2890,7 +3027,26 @@ export default function App({ userEmail = '', profile }) {
           }
         } else {
           setSaveStatus('✅ Guardado');
-          loadedCountRef.current = clients.length; // Actualizar referencia
+          loadedCountRef.current = clients.length;
+        }
+
+        // ═══ DAILY STORAGE BACKUP ═══
+        const today = new Date().toISOString().slice(0, 10);
+        const backupKey = `_lastBackup_${profile.tenant_id}`;
+        if (typeof window !== 'undefined' && localStorage.getItem(backupKey) !== today) {
+          try {
+            const backupData = JSON.stringify({ clients, products, orders, plans, payments, container_stock: containerStock, bottle_swaps: bottleSwaps, client_plans: clientPlans, pending_routes: pendingRoutes, past_routes: pastRoutes, exportedAt: new Date().toISOString() });
+            const fileName = `backup_${today}.json`;
+            await supabase.storage.from('backups').upload(`${profile.tenant_id}/${fileName}`, new Blob([backupData], { type: 'application/json' }), { upsert: true });
+            // Keep max 10 files
+            const { data: files } = await supabase.storage.from('backups').list(profile.tenant_id, { sortBy: { column: 'created_at', order: 'asc' } });
+            if (files && files.length > 10) {
+              const toDelete = files.slice(0, files.length - 10).map(f => `${profile.tenant_id}/${f.name}`);
+              await supabase.storage.from('backups').remove(toDelete);
+            }
+            localStorage.setItem(backupKey, today);
+            console.log('[BACKUP] Daily storage backup uploaded:', fileName);
+          } catch (bErr) { console.warn('[BACKUP] Storage upload failed (non-critical):', bErr); }
         }
       } catch (e) { console.error('[SAVE] exception:', e); setSaveStatus('❌ ' + e.message); }
       setTimeout(() => setSaveStatus(''), 4000);
