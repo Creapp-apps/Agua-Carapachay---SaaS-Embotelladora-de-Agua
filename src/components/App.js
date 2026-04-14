@@ -3033,20 +3033,28 @@ export default function App({ userEmail = '', profile }) {
         // ═══ DAILY STORAGE BACKUP ═══
         const today = new Date().toISOString().slice(0, 10);
         const backupKey = `_lastBackup_${profile.tenant_id}`;
-        if (typeof window !== 'undefined' && localStorage.getItem(backupKey) !== today) {
+        const lastBackup = typeof window !== 'undefined' ? localStorage.getItem(backupKey) : null;
+        console.log('[BACKUP] Check:', { today, lastBackup, tenantId: profile.tenant_id, shouldUpload: lastBackup !== today });
+        if (typeof window !== 'undefined' && lastBackup !== today) {
           try {
             const backupData = JSON.stringify({ clients, products, orders, plans, payments, container_stock: containerStock, bottle_swaps: bottleSwaps, client_plans: clientPlans, pending_routes: pendingRoutes, past_routes: pastRoutes, exportedAt: new Date().toISOString() });
             const fileName = `backup_${today}.json`;
-            await supabase.storage.from('backups').upload(`${profile.tenant_id}/${fileName}`, new Blob([backupData], { type: 'application/json' }), { upsert: true });
-            // Keep max 10 files
-            const { data: files } = await supabase.storage.from('backups').list(profile.tenant_id, { sortBy: { column: 'created_at', order: 'asc' } });
-            if (files && files.length > 10) {
-              const toDelete = files.slice(0, files.length - 10).map(f => `${profile.tenant_id}/${f.name}`);
-              await supabase.storage.from('backups').remove(toDelete);
+            const filePath = `${profile.tenant_id}/${fileName}`;
+            console.log('[BACKUP] Uploading to:', filePath, '(' + Math.round(backupData.length / 1024) + ' KB)');
+            const { data: upData, error: upErr } = await supabase.storage.from('backups').upload(filePath, new Blob([backupData], { type: 'application/json' }), { upsert: true });
+            if (upErr) {
+              console.error('[BACKUP] Upload error:', upErr.message, upErr);
+            } else {
+              console.log('[BACKUP] ✅ Uploaded successfully:', upData);
+              localStorage.setItem(backupKey, today);
+              // Keep max 10 files
+              const { data: files } = await supabase.storage.from('backups').list(profile.tenant_id, { sortBy: { column: 'created_at', order: 'asc' } });
+              if (files && files.length > 10) {
+                const toDelete = files.slice(0, files.length - 10).map(f => `${profile.tenant_id}/${f.name}`);
+                await supabase.storage.from('backups').remove(toDelete);
+              }
             }
-            localStorage.setItem(backupKey, today);
-            console.log('[BACKUP] Daily storage backup uploaded:', fileName);
-          } catch (bErr) { console.warn('[BACKUP] Storage upload failed (non-critical):', bErr); }
+          } catch (bErr) { console.error('[BACKUP] Exception:', bErr); }
         }
       } catch (e) { console.error('[SAVE] exception:', e); setSaveStatus('❌ ' + e.message); }
       setTimeout(() => setSaveStatus(''), 4000);
